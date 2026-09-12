@@ -1,0 +1,42 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: meu-treino-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: treino
+      POSTGRES_PASSWORD: treino
+      POSTGRES_DB: meu_treino
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U treino -d meu_treino"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    container_name: meu-treino-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://treino:treino@db:5432/meu_treino?schema=public
+      DIRECT_URL: postgresql://treino:treino@db:5432/meu_treino?schema=public
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-troque-em-producao}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-30d}
+      ADMIN_PIN: ${ADMIN_PIN:-1234}
+      TRAINEE_PIN: ${TRAINEE_PIN:-5678}
+      PORT: 3000
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001}
+      # local via http -> false; produção via https -> true
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:

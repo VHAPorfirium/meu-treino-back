@@ -1,0 +1,106 @@
+import {
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import * as argon2 from 'argon2';
+import {
+  USER_REPOSITORY,
+  UserRepository,
+} from '../../../users/domain/user.repository';
+import { LoginDto } from '../dto/login.dto';
+import { JwtPayload } from '../../../../shared/auth/jwt-payload';
+import { SecurityLogger } from '../../../../shared/security/security-logger';
+import { LoginThrottleService } from '../../../../shared/security/login-throttle.service';
+
+export interface LoginContext {
+  ip: string;
+  requestId: string;
+}
+
+export interface LoginResult {
+  token: string;
+  user: { id: string; name: string; role: string };
+}
+
+@Injectable()
+export class LoginUseCase {
+  constructor(
+    @Inject(USER_REPOSITORY)
+    private readonly users: UserRepository,
+    private readonly jwt: JwtService,
+    private readonly security: SecurityLogger,
+    private readonly throttle: LoginThrottleService,
+  ) {}
+
+  async execute(dto: LoginDto, ctx: LoginContext): Promise<LoginResult> {
+    const key = this.throttle.key(ctx.ip, dto.role);
+
+    // 1) já está bloqueado por brute-force?
+    const status = this.throttle.status(key);
+    if (status.locked) {
+      this.security.event('auth.login.locked', {
+        ip: ctx.ip,
+        role: dto.role,
+        requestId: ctx.requestId,
+        reason: 'lockout ativo',
+        attempt: status.attempts,
+      });
+      throw new HttpException(
+        `Muitas tentativas. Tente novamente em ${status.retryAfterSec}s.`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    const fail = (reason: string) => {
+      const { attempts, lockedNow } = this.throttle.recordFailure(key);
+      this.security.event('auth.login.failure', {
+        ip: ctx.ip,
+        role: dto.role,
+        requestId: ctx.requestId,
+        reason,
+        attempt: attempts,
+      });
+      if (lockedNow) {
+        this.security.event('auth.login.locked', {
+          ip: ctx.ip,
+          role: dto.role,
+          requestId: ctx.requestId,
+          reason: 'limite de tentativas atingido',
+          attempt: attempts,
+        });
+      }
+      throw new UnauthorizedException('Credenciais inválidas');
+    };
+
+    const user = await this.users.findByRole(dto.role);
+    if (!user) return fail('usuário inexistente');
+
+    const ok = await argon2.verify(user.pinHash, dto.pin).catch(() => false);
+    if (!ok) return fail('PIN incorreto');
+
+    // sucesso: limpa o bucket e registra
+    this.throttle.reset(key);
+    const payload: JwtPayload = {
+      sub: user.id,
+      role: user.role,
+      name: user.name,
+    };
+    const token = await this.jwt.signAsync(payload);
+
+    this.security.event('auth.login.success', {
+      ip: ctx.ip,
+      role: dto.role,
+      userId: user.id,
+      requestId: ctx.requestId,
+    });
+
+    return {
+      token,
+      user: { id: user.id, name: user.name, role: user.role },
+    };
+  }
+}
