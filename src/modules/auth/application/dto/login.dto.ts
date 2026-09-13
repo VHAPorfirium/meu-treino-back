@@ -1,10 +1,7 @@
-import { IsEnum, IsString, Length } from 'class-validator';
-import { Role } from '@prisma/client';
+import { IsString, Length } from 'class-validator';
 
 export class LoginDto {
-  @IsEnum(Role)
-  role: Role;
-
+  // Login por PIN: o próprio PIN identifica o usuário (não escolhemos mais o papel).
   @IsString()
   @Length(4, 8)
   pin: string;

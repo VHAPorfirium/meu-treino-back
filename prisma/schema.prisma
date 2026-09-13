@@ -24,8 +24,8 @@ enum ExerciseStatus {
 
 model User {
   id          String       @id @default(cuid())
-  name        String
-  role        Role         @unique // 1 ADMIN + 1 TRAINEE; simplifica login por papel
+  name        String       @unique // identifica a pessoa; usado no seed p/ upsert idempotente
+  role        Role // ADMIN ou TRAINEE — vários usuários por papel são permitidos
   pinHash     String
   workoutLogs WorkoutLog[]
   createdAt   DateTime     @default(now())

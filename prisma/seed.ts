@@ -8,14 +8,14 @@
  *  4. Resolve mídia (raw GitHub OU upload Supabase Storage)
  *  5. Upsert de Exercises (idempotente por externalId)
  *  6. Gera ExerciseAlternative (mesmo target+bodyPart, equipamento diferente, com cap)
- *  7. Cria usuários ADMIN e TRAINEE (PIN via env, hash argon2)
+ *  7. Cria os 3 usuários (Admin, Victor, Ninfa) via syncUsers — PIN em hash argon2
  *
  * Rode com: npm run seed
  */
 import { PrismaClient } from '@prisma/client';
-import * as argon2 from 'argon2';
 import * as fs from 'fs';
 import * as path from 'path';
+import { syncUsers } from './seed-users';
 
 const prisma = new PrismaClient();
 
@@ -272,24 +272,9 @@ async function main() {
   }
   console.log(`ExerciseAlternatives: ${altRows.length}`);
 
-  // 4) Usuários
-  const adminPin = process.env.ADMIN_PIN ?? '1234';
-  const traineePin = process.env.TRAINEE_PIN ?? '5678';
-  await prisma.user.upsert({
-    where: { role: 'ADMIN' },
-    update: { pinHash: await argon2.hash(adminPin) },
-    create: { name: 'Admin', role: 'ADMIN', pinHash: await argon2.hash(adminPin) },
-  });
-  await prisma.user.upsert({
-    where: { role: 'TRAINEE' },
-    update: { pinHash: await argon2.hash(traineePin) },
-    create: {
-      name: 'Trainee',
-      role: 'TRAINEE',
-      pinHash: await argon2.hash(traineePin),
-    },
-  });
-  console.log('Usuários: ADMIN + TRAINEE prontos');
+  // 4) Usuários — reconciliado por syncUsers (upsert por nome + remove extras).
+  //    Os 3 usuários e seus PINs ficam em prisma/seed-users.ts.
+  await syncUsers(prisma);
 
   console.log('== SEED: concluído ==');
 }

@@ -6,7 +6,7 @@ interface Bucket {
 }
 
 /**
- * Lockout de brute-force por chave (IP + role), em memória.
+ * Lockout de brute-force por IP, em memória.
  * Após MAX_FAILS falhas dentro de WINDOW_MS, bloqueia por LOCK_MS.
  * Simples de propósito — o objetivo é demonstrar a defesa e gerar eventos
  * de segurança pra análise, não ser um store distribuído.
@@ -18,8 +18,8 @@ export class LoginThrottleService {
   private readonly WINDOW_MS = 60_000; // 1 min
   private readonly LOCK_MS = 5 * 60_000; // 5 min
 
-  key(ip: string, role: string): string {
-    return `${ip}::${role}`;
+  key(ip: string): string {
+    return `login::${ip}`;
   }
 
   /** Está bloqueado agora? Retorna segundos restantes se sim. */

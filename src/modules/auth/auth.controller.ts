@@ -33,7 +33,7 @@ export class AuthController {
     private readonly security: SecurityLogger,
   ) {}
 
-  // POST /api/auth/login  { role, pin }
+  // POST /api/auth/login  { pin }  — identifica o usuário pelo PIN
   // Rate limit estrito: 10 tentativas/min por IP (além do lockout de brute-force)
   @Public()
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
