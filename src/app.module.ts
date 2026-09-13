@@ -14,6 +14,7 @@ import { ExercisesModule } from './modules/exercises/exercises.module';
 import { MuscleGroupsModule } from './modules/muscle-groups/muscle-groups.module';
 import { WorkoutsModule } from './modules/workouts/workouts.module';
 import { WorkoutLogsModule } from './modules/workout-logs/workout-logs.module';
+import { HealthModule } from './modules/health/health.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { WorkoutLogsModule } from './modules/workout-logs/workout-logs.module';
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
     PrismaModule,
     SecurityModule,
+    HealthModule,
     AuthModule,
     UsersModule,
     ExercisesModule,
