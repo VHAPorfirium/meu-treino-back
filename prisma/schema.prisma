@@ -1,0 +1,132 @@
+// Prisma schema — App de Treino
+// Ajustes vs. schema original documentados em SYSTEM_DESIGN.md (§6.1)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  ADMIN
+  TRAINEE
+}
+
+enum ExerciseStatus {
+  DONE
+  SKIPPED
+  REPLACED
+}
+
+model User {
+  id          String       @id @default(cuid())
+  name        String
+  role        Role         @unique // 1 ADMIN + 1 TRAINEE; simplifica login por papel
+  pinHash     String
+  workoutLogs WorkoutLog[]
+  createdAt   DateTime     @default(now())
+}
+
+model MuscleGroup {
+  id          String     @id @default(cuid())
+  name        String     @unique // slug do body_part (ex: "upper arms")
+  displayName String // rótulo pt-BR (ex: "Braços")
+  exercises   Exercise[]
+}
+
+model Exercise {
+  id             String   @id @default(cuid())
+  externalId     String   @unique // id do dataset ("0001") -> seed idempotente
+  name           String
+  target         String // músculo-alvo (casa alternativas)
+  bodyPart       String // redundante c/ MuscleGroup, facilita queries
+  gifUrl         String?
+  thumbnailUrl   String?
+  equipment      String?
+  instructions   String? // pt-BR (traduzido)
+  instructionsEn String? // original em inglês (fallback)
+  attribution    String? // © Gym visual (licença de mídia)
+  muscleGroupId  String
+  muscleGroup    MuscleGroup @relation(fields: [muscleGroupId], references: [id])
+
+  alternativesFrom ExerciseAlternative[] @relation("BaseExercise")
+  alternativesTo   ExerciseAlternative[] @relation("AlternativeExercise")
+  workoutExercises WorkoutExercise[]
+  actualInLogs     WorkoutExerciseLog[]  @relation("ActualExercise")
+
+  createdAt DateTime @default(now())
+
+  @@index([target, bodyPart])
+  @@index([muscleGroupId])
+}
+
+model ExerciseAlternative {
+  id             String   @id @default(cuid())
+  baseExerciseId String
+  altExerciseId  String
+  base           Exercise @relation("BaseExercise", fields: [baseExerciseId], references: [id])
+  alt            Exercise @relation("AlternativeExercise", fields: [altExerciseId], references: [id])
+
+  @@unique([baseExerciseId, altExerciseId])
+  @@index([baseExerciseId])
+}
+
+model Workout {
+  id        String            @id @default(cuid())
+  name      String
+  dayOfWeek Int? // 0=domingo ... 6=sábado
+  active    Boolean           @default(true)
+  exercises WorkoutExercise[]
+  logs      WorkoutLog[]
+  createdAt DateTime          @default(now())
+}
+
+model WorkoutExercise {
+  id          String   @id @default(cuid())
+  workoutId   String
+  exerciseId  String
+  order       Int
+  sets        Int
+  reps        String
+  restSeconds Int?
+  notes       String?
+  workout     Workout  @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+  exercise    Exercise @relation(fields: [exerciseId], references: [id])
+  logEntries  WorkoutExerciseLog[]
+
+  @@index([workoutId])
+}
+
+model WorkoutLog {
+  id           String               @id @default(cuid())
+  workoutId    String
+  userId       String
+  date         DateTime             @default(now())
+  completed    Boolean              @default(false)
+  workout      Workout              @relation(fields: [workoutId], references: [id])
+  user         User                 @relation(fields: [userId], references: [id])
+  exerciseLogs WorkoutExerciseLog[]
+
+  @@index([userId, date])
+}
+
+model WorkoutExerciseLog {
+  id                String         @id @default(cuid())
+  workoutLogId      String
+  workoutExerciseId String
+  status            ExerciseStatus
+  actualExerciseId  String? // preenchido quando status = REPLACED
+  actualExercise    Exercise?      @relation("ActualExercise", fields: [actualExerciseId], references: [id])
+  loadUsed          Float?
+  setsCompleted     Int?
+  note              String?
+  workoutLog        WorkoutLog      @relation(fields: [workoutLogId], references: [id], onDelete: Cascade)
+  workoutExercise   WorkoutExercise @relation(fields: [workoutExerciseId], references: [id])
+
+  @@unique([workoutLogId, workoutExerciseId])
+  @@index([workoutLogId])
+}
