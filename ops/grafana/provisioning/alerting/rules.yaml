@@ -1,0 +1,82 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: ritmo-seguranca
+    folder: Ritmo
+    interval: 30s
+    rules:
+      # ── Brute-force por IP: > 5 falhas de login do mesmo IP em 1 min ────────────
+      # Espelha a regra do backend (LoginThrottleService) — o alerta acende junto
+      # com o evento `auth.login.locked`: detecção externa confirmando a defesa interna.
+      - uid: ritmo-bruteforce-ip
+        title: Brute-force de login (por IP)
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: high
+          service: ritmo-api
+        annotations:
+          summary: "Brute-force: IP {{ $labels.ip }} com {{ $values.B }} falhas de login em 1 min"
+          runbook: "Ver dashboard 'Ritmo · Segurança' → Top IPs / Timeline de lockouts"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: loki
+            model:
+              refId: A
+              queryType: range
+              expr: sum by (ip) (count_over_time({app="ritmo-api", event="auth.login.failure"} | json [1m]))
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: max
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [5] }
+
+      # ── Teto global: muitas falhas somando todos os IPs (IP forjado / distribuído) ─
+      - uid: ritmo-bruteforce-global
+        title: Brute-force de login (global)
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          service: ritmo-api
+        annotations:
+          summary: "Brute-force distribuído: {{ $values.B }} falhas de login em 1 min somando todos os IPs"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: loki
+            model:
+              refId: A
+              queryType: range
+              expr: sum(count_over_time({app="ritmo-api", event="auth.login.failure"}[1m]))
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: max
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [30] }

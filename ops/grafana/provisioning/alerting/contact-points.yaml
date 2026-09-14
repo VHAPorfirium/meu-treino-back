@@ -1,0 +1,17 @@
+apiVersion: 1
+
+# A URL do webhook vem da env DISCORD_WEBHOOK_URL do container do Grafana (nunca commitada).
+# Sem ela, o contact point existe mas não entrega — o alerta ainda aparece na UI do Grafana.
+contactPoints:
+  - orgId: 1
+    name: discord-seguranca
+    receivers:
+      - uid: discord-seguranca
+        type: discord
+        settings:
+          url: ${DISCORD_WEBHOOK_URL}
+          title: "🚨 Ritmo · {{ .CommonLabels.alertname }}"
+          message: |-
+            {{ range .Alerts }}{{ .Annotations.summary }}
+            {{ end }}
+          use_discord_username: true

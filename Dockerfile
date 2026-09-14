@@ -27,6 +27,7 @@ RUN npm ci --omit=dev && npx prisma generate && npm cache clean --force
 COPY --from=build /app/dist ./dist
 
 EXPOSE 3000
-# sincroniza o schema (db push é idempotente; ideal p/ app pessoal) e sobe a API.
-# Se preferir migrations versionadas, gere-as com `prisma migrate dev` e troque por `prisma migrate deploy`.
-CMD ["sh", "-c", "npx prisma db push --skip-generate --accept-data-loss && node dist/main.js"]
+# Aplica as migrations versionadas (prisma/migrations) e sobe a API.
+# `migrate deploy` é idempotente e NÃO destrói dados — substituiu o antigo `db push --accept-data-loss`
+# a partir da Frente E (tabelas novas com FK em produção exigem migrations revisáveis).
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]

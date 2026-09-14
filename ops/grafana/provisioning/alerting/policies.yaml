@@ -1,0 +1,9 @@
+apiVersion: 1
+
+policies:
+  - orgId: 1
+    receiver: discord-seguranca
+    group_by: ["alertname", "ip"]
+    group_wait: 10s
+    group_interval: 1m
+    repeat_interval: 30m

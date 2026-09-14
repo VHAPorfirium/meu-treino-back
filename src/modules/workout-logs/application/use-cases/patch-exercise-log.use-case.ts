@@ -29,6 +29,8 @@ export class PatchExerciseLogUseCase {
     if (!log) throw new NotFoundException('Sessão não encontrada');
     if (log.userId !== userId)
       throw new ForbiddenException('Sessão de outro usuário');
+    // Sessão finalizada continua aceitando PATCH: o replay da fila offline (E5)
+    // pode chegar depois do `complete` e precisa ser inofensivo (idempotente).
 
     if (dto.status === ExerciseStatus.REPLACED && !dto.actualExerciseId) {
       throw new BadRequestException(
@@ -36,13 +38,33 @@ export class PatchExerciseLogUseCase {
       );
     }
 
+    // E4: se vieram séries, os agregados (compat c/ dashboard) são DERIVADOS delas.
+    let loadUsed = dto.loadUsed ?? null;
+    let setsCompleted = dto.setsCompleted ?? null;
+    if (dto.sets) {
+      const numbers = dto.sets.map((s) => s.setNumber);
+      if (new Set(numbers).size !== numbers.length) {
+        throw new BadRequestException('setNumber repetido em `sets`');
+      }
+      const weights = dto.sets
+        .map((s) => s.weight)
+        .filter((w): w is number => typeof w === 'number');
+      loadUsed = weights.length ? Math.max(...weights) : null;
+      setsCompleted = dto.sets.length;
+    }
+
     await this.repo.upsertExerciseLog(logId, workoutExerciseId, {
       status: dto.status,
       actualExerciseId:
         dto.status === ExerciseStatus.REPLACED ? dto.actualExerciseId : null,
-      loadUsed: dto.loadUsed ?? null,
-      setsCompleted: dto.setsCompleted ?? null,
+      loadUsed,
+      setsCompleted,
       note: dto.note ?? null,
+      sets: dto.sets?.map((s) => ({
+        setNumber: s.setNumber,
+        weight: s.weight ?? null,
+        reps: s.reps ?? null,
+      })),
     });
 
     return { ok: true };

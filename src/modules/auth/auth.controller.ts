@@ -8,23 +8,17 @@ import {
   Res,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { randomUUID } from 'crypto';
 import type { Request, Response } from 'express';
 import { Public } from '../../shared/auth/public.decorator';
 import { CurrentUser } from '../../shared/auth/current-user.decorator';
 import { AuthUser } from '../../shared/auth/jwt-payload';
 import { AUTH_COOKIE } from '../../shared/auth/jwt.strategy';
 import { SecurityLogger } from '../../shared/security/security-logger';
+import { clientIp, requestId } from '../../shared/http/client-ip';
 import { LoginDto } from './application/dto/login.dto';
 import { LoginUseCase } from './application/use-cases/login.use-case';
 
 const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
-
-function clientIp(req: Request): string {
-  const fwd = req.headers['x-forwarded-for'];
-  if (typeof fwd === 'string' && fwd.length) return fwd.split(',')[0].trim();
-  return req.ip ?? 'unknown';
-}
 
 @Controller('auth')
 export class AuthController {
@@ -46,11 +40,11 @@ export class AuthController {
   ) {
     const result = await this.login.execute(dto, {
       ip: clientIp(req),
-      requestId: randomUUID(),
+      requestId: requestId(req),
     });
 
     // Local (http): COOKIE_SECURE=false -> SameSite=Lax, sem Secure.
-    // Prod (https, front/back em domínios diferentes): COOKIE_SECURE=true -> None+Secure.
+    // Prod (https, via proxy do Next → cookie first-party): COOKIE_SECURE=true -> None+Secure.
     const secure = process.env.COOKIE_SECURE === 'true';
     res.cookie(AUTH_COOKIE, result.token, {
       httpOnly: true,
@@ -69,7 +63,10 @@ export class AuthController {
   @HttpCode(200)
   logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     res.clearCookie(AUTH_COOKIE, { path: '/' });
-    this.security.event('auth.logout', { ip: clientIp(req) });
+    this.security.event('auth.logout', {
+      ip: clientIp(req),
+      requestId: requestId(req),
+    });
     return { ok: true };
   }
 

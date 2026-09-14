@@ -5,6 +5,12 @@ import {
 } from '../../domain/workout.repository';
 import { PrismaService } from '../../../../shared/prisma/prisma.service';
 
+/**
+ * Treino "de hoje" do usuário logado (E1.1 — só treinos DIRECIONADOS a ele):
+ *   1) ativo direcionado com dayOfWeek == hoje  → isFallback: false
+ *   2) senão, qualquer ativo direcionado         → isFallback: true  ("sugerido")
+ *   3) senão, null                                → sem treino atribuído / descanso
+ */
 @Injectable()
 export class GetTodayWorkoutUseCase {
   constructor(
@@ -15,14 +21,20 @@ export class GetTodayWorkoutUseCase {
 
   async execute(userId: string, dayOfWeekOverride?: number) {
     const dayOfWeek = dayOfWeekOverride ?? new Date().getDay();
-    const workout = await this.repo.findTodayWorkout(dayOfWeek);
 
-    if (!workout) return { workout: null, workoutLog: null };
+    let isFallback = false;
+    let workout = await this.repo.findAssignedActiveByDay(userId, dayOfWeek);
+    if (!workout) {
+      workout = await this.repo.findFirstAssignedActive(userId);
+      isFallback = workout !== null;
+    }
+
+    if (!workout) return { workout: null, workoutLog: null, isFallback: false };
 
     const exerciseIds = workout.exercises.map((we) => we.exerciseId);
     const altMap = await this.repo.findAlternativesForExercises(exerciseIds);
 
-    // sessão aberta de hoje (não finalizada), se existir
+    // sessão aberta de hoje (não finalizada), se existir — com as séries (E4)
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
     const openLog = await this.prisma.workoutLog.findFirst({
@@ -32,11 +44,12 @@ export class GetTodayWorkoutUseCase {
         completed: false,
         date: { gte: startOfDay },
       },
-      include: { exerciseLogs: true },
+      include: { exerciseLogs: { include: { sets: { orderBy: { setNumber: 'asc' } } } } },
       orderBy: { date: 'desc' },
     });
 
     return {
+      isFallback,
       workoutLog: openLog,
       workout: {
         id: workout.id,

@@ -14,6 +14,8 @@ export class GetWorkoutUseCase {
   async execute(id: string) {
     const workout = await this.repo.findByIdWithExercises(id);
     if (!workout) throw new NotFoundException('Treino não encontrado');
-    return workout;
+    // expõe `assignees: [{id,name}]` no lugar da tabela de junção crua
+    const { assignments, ...rest } = workout;
+    return { ...rest, assignees: assignments.map((a) => a.user) };
   }
 }

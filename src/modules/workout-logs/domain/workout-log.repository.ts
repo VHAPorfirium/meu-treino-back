@@ -3,8 +3,14 @@ import { ExerciseStatus, Prisma, WorkoutLog } from '@prisma/client';
 export const WORKOUT_LOG_REPOSITORY = Symbol('WORKOUT_LOG_REPOSITORY');
 
 export type WorkoutLogWithEntries = Prisma.WorkoutLogGetPayload<{
-  include: { exerciseLogs: true };
+  include: { exerciseLogs: { include: { sets: true } } };
 }>;
+
+export interface SetLogInput {
+  setNumber: number;
+  weight?: number | null;
+  reps?: number | null;
+}
 
 export interface UpsertExerciseLogData {
   status: ExerciseStatus;
@@ -12,6 +18,8 @@ export interface UpsertExerciseLogData {
   loadUsed?: number | null;
   setsCompleted?: number | null;
   note?: string | null;
+  /** E4 — quando presente, SUBSTITUI todas as séries do registro (replace). */
+  sets?: SetLogInput[];
 }
 
 export interface WorkoutLogRepository {
