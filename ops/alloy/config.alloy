@@ -1,0 +1,87 @@
+// Grafana Alloy — coletor de logs da Frente B.
+// Pipeline: descobre o container da API → lê o stdout (json-file do Docker) →
+// desembrulha → parseia o JSON do pino → vira labels só o que tem BAIXA cardinalidade
+// → envia pro Loki. `ip`, `requestId`, `userId` ficam no corpo (extraídos na query com `| json`).
+
+logging {
+  level  = "warn"
+  format = "logfmt"
+}
+
+// 1) Descobre containers via socket do Docker.
+discovery.docker "containers" {
+  host             = "unix:///var/run/docker.sock"
+  refresh_interval = "10s"
+}
+
+// 2) Fica só com o container da API e cria labels estáveis.
+discovery.relabel "api_only" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/?meu-treino-api"
+    action        = "keep"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/?(.*)"
+    target_label  = "container"
+  }
+  rule {
+    target_label = "app"
+    replacement  = "ritmo-api"
+  }
+}
+
+// 3) Lê o stdout/stderr do container.
+loki.source.docker "api" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.relabel.api_only.output
+  forward_to    = [loki.process.security.receiver]
+  relabel_rules = discovery.relabel.api_only.rules
+  refresh_interval = "10s"
+}
+
+// 4) Parse do JSON do pino e labels de baixa cardinalidade.
+loki.process "security" {
+  forward_to = [loki.write.local.receiver]
+
+  // extrai campos do JSON (linhas não-JSON, ex: banner do Nest, passam sem labels extras)
+  stage.json {
+    expressions = {
+      kind  = "kind",
+      level = "level",
+      event = "event",
+      ts    = "time",
+    }
+  }
+
+  // só o que é evento de segurança ganha labels `kind`/`event`/`level`
+  stage.match {
+    selector = "{app=\"ritmo-api\"}"
+    stage.labels {
+      values = {
+        kind  = "",
+        level = "",
+        event = "",
+      }
+    }
+  }
+
+  // usa o timestamp da API (ISO) em vez do horário de coleta
+  stage.timestamp {
+    source = "ts"
+    format = "RFC3339Nano"
+  }
+}
+
+// 5) Envia pro Loki.
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+  external_labels = {
+    env = "local",
+  }
+}

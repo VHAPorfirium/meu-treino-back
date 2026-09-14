@@ -42,11 +42,41 @@ docker compose logs api | grep '"kind":"security"'
 ```bash
 curl -i -X POST http://localhost:3000/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"role":"ADMIN","pin":"1234"}' | grep -i set-cookie
+  -d '{"pin":"0000"}' | grep -i set-cookie
 ```
 
-## Próximos passos (roadmap do estudo)
-- Pipeline de logs: **Promtail → Loki → Grafana** (ou Filebeat → ELK) com dashboard de
-  tentativas de login, taxa de falha, top IPs, e **alerta de brute-force**.
+## Frente B — o que foi implementado (14/09/2026)
+
+### Eventos de segurança (contrato consumido pelo Grafana)
+Uma linha JSON por evento (`kind:"security"`, `app:"ritmo-api"`), sempre com `ip`, `requestId`, `method`/`path` quando aplicável:
+
+| Evento | Nível | Onde nasce |
+|---|---|---|
+| `auth.login.success` / `failure` / `locked` | info / warn | `LoginUseCase` (`durationMs`, `attempt`, `scope`) |
+| `auth.logout` | info | `AuthController` |
+| `auth.unauthorized` | warn | `JwtAuthGuard.handleRequest` — 401 (`reason`: `no_token` / `expired` / `invalid`) |
+| `authz.denied` | warn | `RolesGuard` — 403 (`requiredRoles`, `role`, `userId`) |
+| `ratelimit.exceeded` | warn | `ThrottlerLogFilter` — 429 do rate limit global |
+
+`request-id` em toda requisição (header `x-request-id`, gerado se não vier) pra correlacionar erro ↔ evento.
+
+### Hardening: IP confiável (bypass do lockout fechado)
+Antes, `clientIp()` lia o **primeiro** `X-Forwarded-For` — controlado pelo cliente. Bastava mandar um IP diferente por request pra nunca cair no lockout por IP. Agora a API usa `req.ip` com `trust proxy` = `TRUST_PROXY_HOPS` (Render direto = 1; via proxy do Next na Vercel = 2), e o header forjado é ignorado. Reproduza o "antes/depois" com `ops/attack-sim.sh N URL <ip-falso>`.
+
+### Defesa em profundidade: teto global de falhas
+`LoginThrottleService` tem duas camadas: **por IP** (5 falhas/1 min → 5 min) e **global** (30 falhas/1 min → 2 min, todos os IPs). Com PIN de 4 dígitos, o teto global limita o número absoluto de tentativas por minuto mesmo com IPs forjados/distribuídos. O evento `auth.login.locked` carrega `scope: "ip" | "global"`.
+
+### Pipeline de observabilidade (local, `docker compose --profile observability up -d`)
+API (stdout JSON) → Docker json-file → **Alloy** (`ops/alloy/config.alloy`) → **Loki** (`ops/loki`) → **Grafana** (`ops/grafana/provisioning`, tudo provisionado por arquivo). Grafana em http://localhost:3002 (admin/admin). Só `app`, `kind`, `level`, `event` viram **labels** no Loki; `ip`/`requestId`/`userId` ficam no JSON (`| json` na query) — cardinalidade controlada.
+
+- Dashboard **"Ritmo · Segurança (mini-SIEM)"** (`security.json`): tentativas/hora, taxa de falha, top IPs, timeline de lockouts, sucesso×falha, latência p50/p95 do login, 401/403/429 por rota, feed bruto.
+- Alertas (`rules.yaml`): **brute-force por IP** (>5 falhas/1min) e **global** (>30/1min) → contact point **Discord** (`DISCORD_WEBHOOK_URL` no `.env`, nunca commitado).
+- Simulação: `./ops/attack-sim.sh` (12 tentativas com PIN errado → 401…401 → 429).
+
+### Supply-chain
+`.github/dependabot.yml` (npm semanal, docker, actions) e `.github/workflows/ci.yml` (`npm audit --audit-level=high`, build, **Trivy** na imagem com falha em CRITICAL/HIGH + SARIF na aba Security).
+
+## Próximos passos
 - Refresh tokens + revogação; rotação de `JWT_SECRET`.
-- Scan de dependências (Dependabot) e de imagem (Trivy) no CI.
+- Logs de produção (Render → Grafana Cloud Loki) reaproveitando o mesmo dashboard.
+- Lockout em Redis se houver mais de uma instância.

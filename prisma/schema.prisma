@@ -23,12 +23,17 @@ enum ExerciseStatus {
 }
 
 model User {
-  id          String       @id @default(cuid())
-  name        String       @unique // identifica a pessoa; usado no seed p/ upsert idempotente
-  role        Role // ADMIN ou TRAINEE — vários usuários por papel são permitidos
-  pinHash     String
-  workoutLogs WorkoutLog[]
-  createdAt   DateTime     @default(now())
+  id                String               @id @default(cuid())
+  name              String               @unique // identifica a pessoa; usado no seed p/ upsert idempotente
+  role              Role // ADMIN ou TRAINEE — vários usuários por papel são permitidos
+  pinHash           String
+  workoutLogs       WorkoutLog[]
+  assignments       WorkoutAssignment[] // treinos direcionados a este usuário (E1.1)
+  progressPhotos    ProgressPhoto[]
+  notesSent         TrainerNote[]        @relation("NotesSent")
+  notesReceived     TrainerNote[]        @relation("NotesReceived")
+  pushSubscriptions PushSubscription[]
+  createdAt         DateTime             @default(now())
 }
 
 model MuscleGroup {
@@ -76,13 +81,27 @@ model ExerciseAlternative {
 }
 
 model Workout {
-  id        String            @id @default(cuid())
-  name      String
-  dayOfWeek Int? // 0=domingo ... 6=sábado
-  active    Boolean           @default(true)
-  exercises WorkoutExercise[]
-  logs      WorkoutLog[]
-  createdAt DateTime          @default(now())
+  id          String              @id @default(cuid())
+  name        String
+  dayOfWeek   Int? // 0=domingo ... 6=sábado
+  active      Boolean             @default(true)
+  exercises   WorkoutExercise[]
+  logs        WorkoutLog[]
+  assignments WorkoutAssignment[] // a quem este treino é direcionado (E1.1)
+  createdAt   DateTime            @default(now())
+}
+
+/// E1.1 — treino direcionado: 1 treino → N alunos, sem duplicar o treino.
+model WorkoutAssignment {
+  id         String   @id @default(cuid())
+  workoutId  String
+  userId     String
+  assignedAt DateTime @default(now())
+  workout    Workout  @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workoutId, userId])
+  @@index([userId])
 }
 
 model WorkoutExercise {
@@ -121,12 +140,62 @@ model WorkoutExerciseLog {
   status            ExerciseStatus
   actualExerciseId  String? // preenchido quando status = REPLACED
   actualExercise    Exercise?      @relation("ActualExercise", fields: [actualExerciseId], references: [id])
-  loadUsed          Float?
-  setsCompleted     Int?
+  loadUsed          Float? // agregado: max(peso) das séries quando `sets` existir (compat c/ dashboard)
+  setsCompleted     Int? // agregado: count(séries) quando `sets` existir
   note              String?
+  sets              SetLog[] // E4 — detalhe por série
   workoutLog        WorkoutLog      @relation(fields: [workoutLogId], references: [id], onDelete: Cascade)
   workoutExercise   WorkoutExercise @relation(fields: [workoutExerciseId], references: [id])
 
   @@unique([workoutLogId, workoutExerciseId])
   @@index([workoutLogId])
+}
+
+/// E4 — registro por série (peso/reps). Escrita sempre por "replace" do conjunto → idempotente.
+model SetLog {
+  id                   String             @id @default(cuid())
+  workoutExerciseLogId String
+  setNumber            Int // 1..N
+  weight               Float? // kg
+  reps                 Int?
+  exerciseLog          WorkoutExerciseLog @relation(fields: [workoutExerciseLogId], references: [id], onDelete: Cascade)
+
+  @@unique([workoutExerciseLogId, setNumber])
+}
+
+/// E6 — foto de progresso (arquivo no bucket PRIVADO `progress` do Supabase; aqui só o caminho).
+model ProgressPhoto {
+  id      String   @id @default(cuid())
+  userId  String
+  path    String // ex: <userId>/<uuid>.jpg
+  takenAt DateTime @default(now())
+  note    String?
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, takenAt])
+}
+
+/// E6 — recado do personal (ADMIN) pra um aluno (TRAINEE).
+model TrainerNote {
+  id        String    @id @default(cuid())
+  fromId    String
+  toId      String
+  text      String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  from      User      @relation("NotesSent", fields: [fromId], references: [id])
+  to        User      @relation("NotesReceived", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@index([toId, createdAt])
+}
+
+/// E6 — inscrição Web Push (VAPID) de um dispositivo do usuário.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

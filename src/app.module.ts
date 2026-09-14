@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 
 import { PrismaModule } from './shared/prisma/prisma.module';
 import { SecurityModule } from './shared/security/security.module';
+import { StorageModule } from './shared/storage/storage.module';
+import { ThrottlerLogFilter } from './shared/security/throttler-log.filter';
 import { JwtAuthGuard } from './shared/auth/jwt-auth.guard';
 import { RolesGuard } from './shared/auth/roles.guard';
 
@@ -15,6 +17,9 @@ import { MuscleGroupsModule } from './modules/muscle-groups/muscle-groups.module
 import { WorkoutsModule } from './modules/workouts/workouts.module';
 import { WorkoutLogsModule } from './modules/workout-logs/workout-logs.module';
 import { HealthModule } from './modules/health/health.module';
+import { NotesModule } from './modules/notes/notes.module';
+import { ProgressPhotosModule } from './modules/progress-photos/progress-photos.module';
+import { PushModule } from './modules/push/push.module';
 
 @Module({
   imports: [
@@ -23,6 +28,7 @@ import { HealthModule } from './modules/health/health.module';
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
     PrismaModule,
     SecurityModule,
+    StorageModule,
     HealthModule,
     AuthModule,
     UsersModule,
@@ -30,12 +36,17 @@ import { HealthModule } from './modules/health/health.module';
     MuscleGroupsModule,
     WorkoutsModule,
     WorkoutLogsModule,
+    PushModule,
+    NotesModule,
+    ProgressPhotosModule,
   ],
   providers: [
     // 1) rate limit  2) autentica  3) checa papel
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    // loga o 429 como evento de segurança (`ratelimit.exceeded`)
+    { provide: APP_FILTER, useClass: ThrottlerLogFilter },
   ],
 })
 export class AppModule {}

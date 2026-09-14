@@ -1,0 +1,157 @@
+{
+  "uid": "ritmo-security",
+  "title": "Ritmo · Segurança (mini-SIEM)",
+  "tags": ["ritmo", "security"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": {
+    "list": [
+      {
+        "name": "Lockouts",
+        "datasource": { "type": "loki", "uid": "loki" },
+        "enable": true,
+        "iconColor": "red",
+        "expr": "{app=\"ritmo-api\", event=\"auth.login.locked\"} | json | line_format \"lockout {{.ip}} ({{.scope}})\""
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Tentativas de login por hora (sucesso × falha)",
+      "gridPos": { "h": 8, "w": 16, "x": 0, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": {
+        "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 60 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "auth.login.failure" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] },
+          { "matcher": { "id": "byName", "options": "auth.login.success" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (event) (count_over_time({app=\"ritmo-api\", event=~\"auth.login.(success|failure)\"}[1h]))",
+          "legendFormat": "{{event}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "gauge",
+      "title": "Taxa de falha (%)",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent", "min": 0, "max": 100,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 30 }, { "color": "red", "value": 60 } ] }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "instant",
+          "expr": "100 * sum(count_over_time({app=\"ritmo-api\", event=\"auth.login.failure\"}[$__range])) / sum(count_over_time({app=\"ritmo-api\", event=~\"auth.login.(success|failure)\"}[$__range]))"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "bargauge",
+      "title": "Top IPs ofensores (falhas de login)",
+      "gridPos": { "h": 9, "w": 8, "x": 0, "y": 8 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "orientation": "horizontal", "displayMode": "gradient", "showUnfilled": true },
+      "fieldConfig": { "defaults": { "color": { "mode": "continuous-RdYlGr" } }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "instant",
+          "expr": "topk(10, sum by (ip) (count_over_time({app=\"ritmo-api\", event=\"auth.login.failure\"} | json [$__range])))",
+          "legendFormat": "{{ip}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "logs",
+      "title": "Timeline de lockouts (por IP / global)",
+      "gridPos": { "h": 9, "w": 16, "x": 8, "y": 8 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending", "dedupStrategy": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{app=\"ritmo-api\", event=\"auth.login.locked\"} | json | line_format \"🔒 {{.ip}} bloqueado · escopo={{.scope}} · tentativas={{.attempt}} · {{.reason}}\""
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "piechart",
+      "title": "Sucesso × falha × lockout",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 17 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "legend": { "displayMode": "list", "placement": "right" }, "pieType": "donut", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "instant",
+          "expr": "sum by (event) (count_over_time({app=\"ritmo-api\", event=~\"auth.login.*\"}[$__range]))",
+          "legendFormat": "{{event}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Latência do login (p50 / p95, ms)",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 17 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "quantile_over_time(0.50, {app=\"ritmo-api\", event=~\"auth.login.(success|failure)\"} | json | unwrap durationMs [5m])", "legendFormat": "p50" },
+        { "refId": "B", "expr": "quantile_over_time(0.95, {app=\"ritmo-api\", event=~\"auth.login.(success|failure)\"} | json | unwrap durationMs [5m])", "legendFormat": "p95" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "401 / 403 / 429 por rota",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 17 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showHeader": true },
+      "transformations": [
+        { "id": "labelsToFields", "options": {} },
+        { "id": "organize", "options": { "excludeByName": { "Time": true } } }
+      ],
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "instant",
+          "expr": "sum by (event, path) (count_over_time({app=\"ritmo-api\", event=~\"auth.unauthorized|authz.denied|ratelimit.exceeded\"} | json [$__range]))"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "logs",
+      "title": "Feed de eventos de segurança",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 25 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending", "enableLogDetails": true },
+      "targets": [
+        { "refId": "A", "expr": "{app=\"ritmo-api\", kind=\"security\"} | json" }
+      ]
+    }
+  ]
+}

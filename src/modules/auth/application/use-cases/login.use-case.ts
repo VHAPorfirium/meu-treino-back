@@ -18,7 +18,7 @@ import { LoginThrottleService } from '../../../../shared/security/login-throttle
 
 export interface LoginContext {
   ip: string;
-  requestId: string;
+  requestId?: string;
 }
 
 export interface LoginResult {
@@ -37,10 +37,11 @@ export class LoginUseCase {
   ) {}
 
   async execute(dto: LoginDto, ctx: LoginContext): Promise<LoginResult> {
-    // Login por PIN: a chave de brute-force é só o IP (não temos mais o papel).
+    const startedAt = Date.now();
+    // Login por PIN: a chave de brute-force é o IP (+ um teto global, ver LoginThrottleService).
     const key = this.throttle.key(ctx.ip);
 
-    // 1) já está bloqueado por brute-force?
+    // 1) já está bloqueado por brute-force (por IP ou globalmente)?
     const status = this.throttle.status(key);
     if (status.locked) {
       this.security.event('auth.login.locked', {
@@ -48,6 +49,8 @@ export class LoginUseCase {
         requestId: ctx.requestId,
         reason: 'lockout ativo',
         attempt: status.attempts,
+        retryAfterSec: status.retryAfterSec,
+        scope: status.scope,
       });
       throw new HttpException(
         `Muitas tentativas. Tente novamente em ${status.retryAfterSec}s.`,
@@ -56,12 +59,13 @@ export class LoginUseCase {
     }
 
     const fail = (reason: string) => {
-      const { attempts, lockedNow } = this.throttle.recordFailure(key);
+      const { attempts, lockedNow, scope } = this.throttle.recordFailure(key);
       this.security.event('auth.login.failure', {
         ip: ctx.ip,
         requestId: ctx.requestId,
         reason,
         attempt: attempts,
+        durationMs: Date.now() - startedAt,
       });
       if (lockedNow) {
         this.security.event('auth.login.locked', {
@@ -69,6 +73,7 @@ export class LoginUseCase {
           requestId: ctx.requestId,
           reason: 'limite de tentativas atingido',
           attempt: attempts,
+          scope,
         });
       }
       throw new UnauthorizedException('Credenciais inválidas');
@@ -87,7 +92,7 @@ export class LoginUseCase {
     }
     if (!matched) return fail('PIN incorreto');
 
-    // sucesso: limpa o bucket e registra
+    // sucesso: limpa o bucket do IP e registra
     this.throttle.reset(key);
     const payload: JwtPayload = {
       sub: matched.id,
@@ -101,6 +106,7 @@ export class LoginUseCase {
       role: matched.role,
       userId: matched.id,
       requestId: ctx.requestId,
+      durationMs: Date.now() - startedAt,
     });
 
     return {
