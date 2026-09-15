@@ -16,6 +16,7 @@ import { CurrentUser } from '../../shared/auth/current-user.decorator';
 import { AuthUser } from '../../shared/auth/jwt-payload';
 import { CreateWorkoutDto } from './application/dto/create-workout.dto';
 import { AddExerciseDto } from './application/dto/add-exercise.dto';
+import { AddExercisesBatchDto } from './application/dto/add-exercises-batch.dto';
 import { UpdateWorkoutDto } from './application/dto/update-workout.dto';
 import { UpdateWorkoutExerciseDto } from './application/dto/update-workout-exercise.dto';
 import { SetAssigneesDto } from './application/dto/set-assignees.dto';
@@ -23,6 +24,7 @@ import { ReorderExercisesDto } from './application/dto/reorder-exercises.dto';
 import { DuplicateWorkoutDto } from './application/dto/duplicate-workout.dto';
 import { CreateWorkoutUseCase } from './application/use-cases/create-workout.use-case';
 import { AddExerciseUseCase } from './application/use-cases/add-exercise.use-case';
+import { AddExercisesBatchUseCase } from './application/use-cases/add-exercises-batch.use-case';
 import { GetTodayWorkoutUseCase } from './application/use-cases/get-today-workout.use-case';
 import { ListWorkoutsUseCase } from './application/use-cases/list-workouts.use-case';
 import { GetWorkoutUseCase } from './application/use-cases/get-workout.use-case';
@@ -40,6 +42,7 @@ export class WorkoutsController {
   constructor(
     private readonly createWorkout: CreateWorkoutUseCase,
     private readonly addExercise: AddExerciseUseCase,
+    private readonly addExercisesBatch: AddExercisesBatchUseCase,
     private readonly getToday: GetTodayWorkoutUseCase,
     private readonly listWorkouts: ListWorkoutsUseCase,
     private readonly getWorkout: GetWorkoutUseCase,
@@ -123,6 +126,15 @@ export class WorkoutsController {
   @HttpCode(201)
   duplicate(@Param('id') id: string, @Body() dto: DuplicateWorkoutDto) {
     return this.duplicateWorkout.execute(id, dto);
+  }
+
+  // POST /api/workouts/:id/exercises/batch { items[] } — N exercícios numa
+  // transação, `order` definido pelo servidor (E7). Antes de :id/exercises.
+  @Roles(Role.ADMIN)
+  @Post(':id/exercises/batch')
+  @HttpCode(201)
+  addExBatch(@Param('id') id: string, @Body() dto: AddExercisesBatchDto) {
+    return this.addExercisesBatch.execute(id, dto);
   }
 
   // POST /api/workouts/:id/exercises

@@ -85,6 +85,36 @@ export class PrismaWorkoutRepository implements WorkoutRepository {
     });
   }
 
+  /**
+   * Adiciona vários exercícios de uma vez, numa transação (E7).
+   *
+   * O `order` é atribuído aqui, a partir do maior já existente no treino — o
+   * cliente não manda posição. `order` é 1-based no projeto, então um treino
+   * vazio começa em 1.
+   */
+  addExercisesBatch(
+    workoutId: string,
+    items: Omit<WorkoutExerciseData, 'order'>[],
+  ): Promise<WorkoutExercise[]> {
+    return this.prisma.$transaction(async (tx) => {
+      const { _max } = await tx.workoutExercise.aggregate({
+        where: { workoutId },
+        _max: { order: true },
+      });
+      const base = _max.order ?? 0;
+
+      await tx.workoutExercise.createMany({
+        data: items.map((it, i) => ({ workoutId, ...it, order: base + i + 1 })),
+      });
+
+      // `createMany` não devolve as linhas; relê só as que acabaram de entrar
+      return tx.workoutExercise.findMany({
+        where: { workoutId, order: { gt: base } },
+        orderBy: { order: 'asc' },
+      });
+    });
+  }
+
   findById(id: string): Promise<Workout | null> {
     return this.prisma.workout.findUnique({ where: { id } });
   }
