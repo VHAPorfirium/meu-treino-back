@@ -33,6 +33,12 @@ export interface WorkoutRepository {
     data: WorkoutExerciseData,
   ): Promise<WorkoutExercise>;
 
+  /** Adiciona N exercícios numa transação, com `order` sequencial (E7). */
+  addExercisesBatch(
+    workoutId: string,
+    items: Omit<WorkoutExerciseData, 'order'>[],
+  ): Promise<WorkoutExercise[]>;
+
   findById(id: string): Promise<Workout | null>;
 
   /** Lista todos os treinos (contagem de exercícios + destinatários) — admin. */

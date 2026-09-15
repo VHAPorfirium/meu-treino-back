@@ -6,6 +6,7 @@ import { UsersModule } from '../users/users.module';
 import { PushModule } from '../push/push.module';
 import { CreateWorkoutUseCase } from './application/use-cases/create-workout.use-case';
 import { AddExerciseUseCase } from './application/use-cases/add-exercise.use-case';
+import { AddExercisesBatchUseCase } from './application/use-cases/add-exercises-batch.use-case';
 import { GetTodayWorkoutUseCase } from './application/use-cases/get-today-workout.use-case';
 import { ListWorkoutsUseCase } from './application/use-cases/list-workouts.use-case';
 import { GetWorkoutUseCase } from './application/use-cases/get-workout.use-case';
@@ -25,6 +26,7 @@ import { ListMyWorkoutsUseCase } from './application/use-cases/list-my-workouts.
     { provide: WORKOUT_REPOSITORY, useClass: PrismaWorkoutRepository },
     CreateWorkoutUseCase,
     AddExerciseUseCase,
+    AddExercisesBatchUseCase,
     GetTodayWorkoutUseCase,
     ListWorkoutsUseCase,
     GetWorkoutUseCase,
