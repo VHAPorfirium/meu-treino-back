@@ -7,10 +7,11 @@ import { traduzNome } from './traduz-nome';
  */
 describe('portão de qualidade', () => {
   it('devolve null quando alguma palavra não está no glossário', () => {
-    const r = traduzNome('dumbbell zottman curl on wobble board');
+    // palavra inventada de propósito: o glossário cresce, e este teste protege a
+    // REGRA (na dúvida, inglês), não um termo específico que amanhã já existe
+    const r = traduzNome('dumbbell flurbwidget curl');
     expect(r.pt).toBeNull();
-    // e diz o que faltou — é a lista de trabalho da onda 2
-    expect(r.faltando).toEqual(expect.arrayContaining(['zottman', 'wobble']));
+    expect(r.faltando).toContain('flurbwidget'); // diz o que faltou
   });
 
   it('devolve null quando não identifica o movimento', () => {
@@ -33,6 +34,29 @@ describe('ordem do português', () => {
 
   it('a frase mais longa ganha da mais curta', () => {
     expect(traduzNome('incline bench press').pt).toBe('Supino inclinado');
+  });
+});
+
+describe('sem preposição órfã', () => {
+  it('não deixa "com" solto quando a palavra seguinte já apareceu', () => {
+    // "barbell high bar squat": "na barra" + "com barra" -> o 2º pedaço vira só
+    // "com" depois do dedupe e tem que sumir inteiro, não virar frase quebrada
+    const pt = traduzNome('barbell high bar squat').pt;
+    expect(pt).not.toBeNull();
+    expect(pt!.trim()).not.toMatch(/\b(com|na|no|de|em)$/);
+  });
+
+  it('nenhum nome traduzido termina em preposição', () => {
+    const casos = [
+      'dumbbell fly on exercise ball',
+      'ez bar french press on exercise ball',
+      'barbell high bar squat',
+      'cable rope triceps pushdown',
+    ];
+    for (const c of casos) {
+      const pt = traduzNome(c).pt;
+      if (pt) expect(pt.trim()).not.toMatch(/\b(com|na|no|de|em|da|do)$/);
+    }
   });
 });
 
