@@ -72,13 +72,16 @@ export function traduzNome(nome: string): ResultadoTraducao {
   }
 
   // 2) equipamento sai da frase e volta no fim
+  // Consome TODOS os equipamentos citados, não só o primeiro: nomes como
+  // "cable rope triceps pushdown" citam dois, e o que sobrasse viraria uma
+  // palavra desconhecida que reprovaria o nome inteiro no portão de qualidade.
+  // O sufixo fica com o primeiro (a lista está ordenada do mais específico).
   let sufixoEquip: string | null = null;
   for (const e of EQUIPS) {
     const re = comoPalavra(e);
     if (re.test(resto)) {
-      sufixoEquip = G.equipamentoNoFim[e];
-      resto = resto.replace(re, ' ');
-      break;
+      sufixoEquip ??= G.equipamentoNoFim[e];
+      resto = resto.replace(new RegExp(`\\b${escapa(e)}\\b`, 'gi'), ' ');
     }
   }
 
@@ -112,13 +115,25 @@ export function traduzNome(nome: string): ResultadoTraducao {
 
   const pedacos = [nucleo, ...alvo, ...sufixos, ...(sufixoEquip ? [sufixoEquip] : [])];
 
-  // tira repetição: "Flexão lateral" + "lateral" viraria "Flexão lateral lateral"
+  // Tira repetição de palavra ("Flexão lateral" + "lateral"), mas NUNCA deixa
+  // preposição órfã: retirar "barra" de "com barra" deixaria um "com" solto no
+  // fim da frase. Se o pedaço virar só preposição, ele some inteiro.
+  const PREPOSICOES = new Set([
+    'com', 'na', 'no', 'nas', 'nos', 'de', 'da', 'do', 'em', 'a', 'o', 'e', 'ao',
+  ]);
   const vistos = new Set<string>();
   const saida: string[] = [];
   for (const p of pedacos) {
-    const novos = p.split(' ').filter((t) => !vistos.has(t.toLowerCase()));
-    p.split(' ').forEach((t) => vistos.add(t.toLowerCase()));
-    if (novos.length) saida.push(novos.join(' '));
+    const tokens = p.split(' ');
+    const mantidos = tokens.filter(
+      (t) => PREPOSICOES.has(t.toLowerCase()) || !vistos.has(t.toLowerCase()),
+    );
+    tokens.forEach((t) => vistos.add(t.toLowerCase()));
+    // sobrou só preposição → o conteúdo já foi dito antes, o pedaço não agrega
+    if (!mantidos.length || mantidos.every((t) => PREPOSICOES.has(t.toLowerCase()))) {
+      continue;
+    }
+    saida.push(mantidos.join(' '));
   }
 
   return { pt: saida.join(' '), faltando: [] };
