@@ -1,7 +1,10 @@
 import { Controller, Get } from '@nestjs/common';
+import { Role } from '@prisma/client';
 import { SkipThrottle } from '@nestjs/throttler';
 import { Public } from '../../shared/auth/public.decorator';
+import { Roles } from '../../shared/auth/roles.decorator';
 import { PrismaService } from '../../shared/prisma/prisma.service';
+import { CacheService } from '../../shared/cache/cache.service';
 
 /** Tabelas que o schema.prisma exige. Faltar qualquer uma = 500 na rota que a usa. */
 const TABELAS_ESPERADAS = [
@@ -48,7 +51,23 @@ function falha(e: unknown): Passo {
 
 @Controller('health')
 export class HealthController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cache: CacheService,
+  ) {}
+
+  /**
+   * GET /api/health/cache — taxa de acerto, entradas e se o cache está ligado.
+   *
+   * **ADMIN**, ao contrário do `/health/db`: aqui a resposta conta o padrão de
+   * uso da aplicação, e isso não precisa ser público.
+   */
+  @Roles(Role.ADMIN)
+  @SkipThrottle()
+  @Get('cache')
+  cacheStats() {
+    return this.cache.estatisticas();
+  }
 
   // GET /api/health — healthcheck simples (Render/monitoração).
   @Public()

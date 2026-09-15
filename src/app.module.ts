@@ -1,12 +1,14 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 
 import { PrismaModule } from './shared/prisma/prisma.module';
+import { CacheModule } from './shared/cache/cache.module';
 import { SecurityModule } from './shared/security/security.module';
 import { StorageModule } from './shared/storage/storage.module';
 import { AllExceptionsFilter } from './shared/http/all-exceptions.filter';
+import { requestTimingMiddleware } from './shared/http/request-timing.middleware';
 import { JwtAuthGuard } from './shared/auth/jwt-auth.guard';
 import { RolesGuard } from './shared/auth/roles.guard';
 
@@ -27,6 +29,7 @@ import { PushModule } from './modules/push/push.module';
     // Rate limit global: 120 req/min por IP (mitiga abuso/DoS leve)
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
     PrismaModule,
+    CacheModule,
     SecurityModule,
     StorageModule,
     HealthModule,
@@ -50,4 +53,9 @@ import { PushModule } from './modules/push/push.module';
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  // duração de todo request — a régua do "antes e depois" do cache (Frente G)
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(requestTimingMiddleware).forRoutes('*');
+  }
+}
