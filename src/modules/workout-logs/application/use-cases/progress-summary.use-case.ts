@@ -5,6 +5,7 @@ import {
   WORKOUT_LOG_REPOSITORY,
   WorkoutLogRepository,
 } from '../../domain/workout-log.repository';
+import { CacheService, TTL } from '../../../../shared/cache/cache.service';
 
 const DAY = 24 * 60 * 60 * 1000;
 const dayKey = (d: Date) => new Date(d).toISOString().slice(0, 10);
@@ -23,7 +24,18 @@ export class ProgressSummaryUseCase {
     @Inject(WORKOUT_LOG_REPOSITORY)
     private readonly repo: WorkoutLogRepository,
     private readonly prisma: PrismaService,
+    private readonly cache: CacheService,
   ) {}
+
+  /**
+   * Chave do cache. O `userId` aqui é **sobre quem** é o resumo, não quem
+   * perguntou — a rota é ADMIN-only e dois admins veem exatamente a mesma coisa.
+   * Mesmo assim vai por `lembrarDoUsuario`: é o que amarra a entrada ao aluno e
+   * faz a invalidação das escritas DELE limparem o resumo certo.
+   */
+  static chave(userId?: string) {
+    return { dono: userId ?? 'all', nome: 'progress:v1' };
+  }
 
   /**
    * @param userId quando informado, restringe o resumo a um aluno. Sem ele, o
@@ -31,7 +43,14 @@ export class ProgressSummaryUseCase {
    * `streak` e `heatmap` passam a significar "dias em que alguém treinou", não
    * a constância de uma pessoa — o front avisa isso na tela.
    */
-  async execute(userId?: string) {
+  execute(userId?: string) {
+    const { dono, nome } = ProgressSummaryUseCase.chave(userId);
+    return this.cache.lembrarDoUsuario(dono, nome, TTL.PROGRESSO, () =>
+      this.calcular(userId),
+    );
+  }
+
+  private async calcular(userId?: string) {
     const now = new Date();
     const since90 = new Date(now.getTime() - 90 * DAY);
     const since30 = new Date(now.getTime() - 30 * DAY);

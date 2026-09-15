@@ -11,12 +11,15 @@ import {
   WorkoutLogRepository,
 } from '../../domain/workout-log.repository';
 import { PatchExerciseLogDto } from '../dto/patch-exercise-log.dto';
+import { CacheService } from '../../../../shared/cache/cache.service';
+import { invalidarProgresso } from './invalida-progresso';
 
 @Injectable()
 export class PatchExerciseLogUseCase {
   constructor(
     @Inject(WORKOUT_LOG_REPOSITORY)
     private readonly repo: WorkoutLogRepository,
+    private readonly cache: CacheService,
   ) {}
 
   async execute(
@@ -79,6 +82,7 @@ export class PatchExerciseLogUseCase {
       })),
     });
 
+    await invalidarProgresso(this.cache, log.userId);
     return { ok: true };
   }
 }
