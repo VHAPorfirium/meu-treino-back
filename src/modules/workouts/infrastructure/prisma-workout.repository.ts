@@ -182,7 +182,9 @@ export class PrismaWorkoutRepository implements WorkoutRepository {
           select: {
             id: true,
             name: true,
+            namePt: true, // E11
             equipment: true,
+            equipmentPt: true,
             gifUrl: true,
             thumbnailUrl: true,
           },

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Exercise, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../shared/prisma/prisma.service';
 import {
+  EquipamentoOpcao,
   ExerciseRepository,
   ListExercisesFilter,
   PaginatedExercises,
@@ -27,12 +28,18 @@ export class PrismaExerciseRepository implements ExerciseRepository {
 
     const q = filter.search?.trim();
     if (q) {
-      // busca livre em vários campos — o placeholder promete "nome ou equipamento"
+      // E11 — busca nos DOIS idiomas. Quem digita "supino" acha, e quem digita
+      // "bench" continua achando: o catálogo veio em inglês e muita gente (e o
+      // próprio Victor) conhece os exercícios pelo nome original.
       where.OR = [
         { name: { contains: q, mode: 'insensitive' } },
+        { namePt: { contains: q, mode: 'insensitive' } },
         { equipment: { contains: q, mode: 'insensitive' } },
+        { equipmentPt: { contains: q, mode: 'insensitive' } },
         { target: { contains: q, mode: 'insensitive' } },
+        { targetPt: { contains: q, mode: 'insensitive' } },
         { bodyPart: { contains: q, mode: 'insensitive' } },
+        { muscleGroup: { displayName: { contains: q, mode: 'insensitive' } } },
       ];
     }
 
@@ -55,8 +62,14 @@ export class PrismaExerciseRepository implements ExerciseRepository {
     const items = total
       ? await this.prisma.exercise.findMany({
           where,
-          // `id` como desempate garante ordem estável entre páginas
-          orderBy: [{ name: 'asc' }, { id: 'asc' }],
+          // E11 — ordena pelo nome em pt quando existe, senão pelo inglês.
+          // `nulls: 'last'` evita que os ainda-não-traduzidos venham todos na frente.
+          // `id` como desempate garante ordem estável entre páginas.
+          orderBy: [
+            { namePt: { sort: 'asc', nulls: 'last' } },
+            { name: 'asc' },
+            { id: 'asc' },
+          ],
           skip: (page - 1) * pageSize,
           take: pageSize,
         })
@@ -86,15 +99,19 @@ export class PrismaExerciseRepository implements ExerciseRepository {
     return rows.map((r) => r.alt);
   }
 
-  async listEquipment(): Promise<string[]> {
+  async listEquipment(): Promise<EquipamentoOpcao[]> {
     const rows = await this.prisma.exercise.findMany({
       where: { equipment: { not: null } },
       distinct: ['equipment'],
-      select: { equipment: true },
+      select: { equipment: true, equipmentPt: true },
       orderBy: { equipment: 'asc' },
     });
     return rows
-      .map((r) => r.equipment)
-      .filter((e): e is string => typeof e === 'string' && e.length > 0);
+      .filter((r): r is { equipment: string; equipmentPt: string | null } =>
+        typeof r.equipment === 'string' && r.equipment.length > 0,
+      )
+      .map((r) => ({ valor: r.equipment, rotulo: r.equipmentPt ?? r.equipment }))
+      // ordena pelo que o usuário LÊ, não pelo valor em inglês
+      .sort((a, b) => a.rotulo.localeCompare(b.rotulo, 'pt-BR'));
   }
 }

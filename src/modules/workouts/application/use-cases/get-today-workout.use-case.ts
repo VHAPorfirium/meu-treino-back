@@ -99,9 +99,12 @@ export class GetTodayWorkoutUseCase {
           exercise: {
             id: we.exercise.id,
             name: we.exercise.name,
+            namePt: we.exercise.namePt, // E11
             target: we.exercise.target,
-            bodyPart: we.exercise.bodyPart,
+            targetPt: we.exercise.targetPt,
+            bodyPart: we.exercise.bodyPart, // o front usa pra sugerir modo TIME
             equipment: we.exercise.equipment,
+            equipmentPt: we.exercise.equipmentPt,
             gifUrl: we.exercise.gifUrl,
             thumbnailUrl: we.exercise.thumbnailUrl,
             instructions: we.exercise.instructions,

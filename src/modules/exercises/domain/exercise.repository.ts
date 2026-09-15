@@ -27,6 +27,13 @@ export interface PaginatedExercises {
   hasNext: boolean;
 }
 
+export interface EquipamentoOpcao {
+  /** valor canônico (inglês) — é o que vai no filtro */
+  valor: string;
+  /** rótulo exibido (pt-BR quando houver tradução) */
+  rotulo: string;
+}
+
 export const EXERCISE_REPOSITORY = Symbol('EXERCISE_REPOSITORY');
 
 export interface ExerciseRepository {
@@ -34,6 +41,12 @@ export interface ExerciseRepository {
   findById(id: string): Promise<Exercise | null>;
   /** Alternativas pré-computadas (mesmo target+bodyPart, equipamento diferente). */
   findAlternatives(exerciseId: string): Promise<Exercise[]>;
-  /** Equipamentos distintos existentes no catálogo (alimenta o filtro). */
-  listEquipment(): Promise<string[]>;
+  /**
+   * Equipamentos distintos do catálogo (alimenta o filtro).
+   *
+   * E11 — **`valor` em inglês, `rotulo` em pt**. O filtro casa com a coluna
+   * canônica (`equipment`); traduzir o valor enviado quebraria a busca em
+   * silêncio. O front mostra o rótulo e manda o valor.
+   */
+  listEquipment(): Promise<EquipamentoOpcao[]>;
 }
