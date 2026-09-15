@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
+  EquipamentoOpcao,
   EXERCISE_REPOSITORY,
   ExerciseRepository,
   ListExercisesFilter,
@@ -72,7 +73,7 @@ export class ListEquipmentUseCase {
     private readonly cache: CacheService,
   ) {}
 
-  execute(): Promise<string[]> {
+  execute(): Promise<EquipamentoOpcao[]> {
     // era um `distinct` varrendo as 1.324 linhas a cada abertura do picker
     return this.cache.lembrarGlobal('ex:equip:v1', TTL.CATALOGO, () =>
       this.repo.listEquipment(),

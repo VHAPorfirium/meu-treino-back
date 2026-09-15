@@ -54,11 +54,18 @@ model Exercise {
   id             String   @id @default(cuid())
   externalId     String   @unique // id do dataset ("0001") -> seed idempotente
   name           String
+  // E11 — tradução pt-BR em colunas SEPARADAS, nunca por cima do inglês:
+  // `ehCardio()` testa bodyPart === 'cardio', as alternativas casam por
+  // target+bodyPart, o seed é idempotente contra o dataset em inglês e a busca
+  // precisa continuar achando "bench"/"squat". A API devolve pt com fallback.
+  namePt         String?
   target         String // músculo-alvo (casa alternativas)
+  targetPt       String?
   bodyPart       String // redundante c/ MuscleGroup, facilita queries
   gifUrl         String?
   thumbnailUrl   String?
   equipment      String?
+  equipmentPt    String?
   instructions   String? // pt-BR (traduzido)
   instructionsEn String? // original em inglês (fallback)
   attribution    String? // © Gym visual (licença de mídia)

@@ -18,7 +18,8 @@
     "seed:users": "ts-node --transpile-only prisma/seed-users.ts",
     "db:reset": "prisma migrate reset --force",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "seed:traducoes": "ts-node prisma/seed-traducoes.ts"
   },
   "prisma": {
     "seed": "ts-node --transpile-only prisma/seed.ts"
