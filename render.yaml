@@ -7,7 +7,7 @@ services:
     dockerfilePath: ./Dockerfile
     plan: free
     region: ohio
-    branch: dev
+    branch: main # o deploy sai de `main`; trabalha-se na `dev` e faz-se merge
     healthCheckPath: /api/health
     envVars:
       - key: DATABASE_URL
