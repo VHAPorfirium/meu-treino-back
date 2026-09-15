@@ -5,6 +5,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { Roles } from '../../shared/auth/roles.decorator';
@@ -70,10 +71,11 @@ export class WorkoutLogsController {
     return this.myHistory.execute(user.userId);
   }
 
-  // GET /api/workout-logs/progress-summary  (ADMIN)
+  // GET /api/workout-logs/progress-summary?userId=  (ADMIN)
+  // Sem `userId` = agregado de todos os alunos; com `userId` = só aquele aluno.
   @Roles(Role.ADMIN)
   @Get('progress-summary')
-  getProgress() {
-    return this.progress.execute();
+  getProgress(@Query('userId') userId?: string) {
+    return this.progress.execute(userId?.trim() || undefined);
   }
 }

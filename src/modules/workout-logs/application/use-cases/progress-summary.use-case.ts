@@ -25,14 +25,20 @@ export class ProgressSummaryUseCase {
     private readonly prisma: PrismaService,
   ) {}
 
-  async execute() {
+  /**
+   * @param userId quando informado, restringe o resumo a um aluno. Sem ele, o
+   * resumo é **agregado**: soma as sessões de todos os alunos. Nesse modo,
+   * `streak` e `heatmap` passam a significar "dias em que alguém treinou", não
+   * a constância de uma pessoa — o front avisa isso na tela.
+   */
+  async execute(userId?: string) {
     const now = new Date();
     const since90 = new Date(now.getTime() - 90 * DAY);
     const since30 = new Date(now.getTime() - 30 * DAY);
     const since60 = new Date(now.getTime() - 60 * DAY);
 
     const logs = await this.prisma.workoutLog.findMany({
-      where: { date: { gte: since90 } },
+      where: { date: { gte: since90 }, ...(userId ? { userId } : {}) },
       orderBy: { date: 'asc' },
       include: {
         exerciseLogs: {
