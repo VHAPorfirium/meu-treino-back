@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   EXERCISE_REPOSITORY,
   ExerciseRepository,
+  ListExercisesFilter,
   PaginatedExercises,
 } from '../../domain/exercise.repository';
 import { ListExercisesQuery } from '../dto/list-exercises.query';
@@ -19,11 +20,12 @@ export class ListExercisesUseCase {
   ) {}
 
   execute(query: ListExercisesQuery): Promise<PaginatedExercises> {
-    const filter = {
+    const filter: ListExercisesFilter = {
       search: query.search,
+      equipment: query.equipment,
       page: query.page,
       pageSize: query.pageSize,
-    } as Record<string, unknown>;
+    };
 
     if (query.muscleGroup) {
       if (looksLikeId(query.muscleGroup)) filter.muscleGroupId = query.muscleGroup;
@@ -31,5 +33,18 @@ export class ListExercisesUseCase {
     }
 
     return this.repo.findMany(filter);
+  }
+}
+
+/** Lista os equipamentos distintos do catálogo (alimenta o filtro do front). */
+@Injectable()
+export class ListEquipmentUseCase {
+  constructor(
+    @Inject(EXERCISE_REPOSITORY)
+    private readonly repo: ExerciseRepository,
+  ) {}
+
+  execute(): Promise<string[]> {
+    return this.repo.listEquipment();
   }
 }

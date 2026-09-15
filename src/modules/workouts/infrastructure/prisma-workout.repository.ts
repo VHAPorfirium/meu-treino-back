@@ -47,18 +47,33 @@ export class PrismaWorkoutRepository implements WorkoutRepository {
     return this.prisma.workout.findUnique({ where: { id } });
   }
 
+  /**
+   * Lista os treinos com contagem de exercícios e destinatários.
+   *
+   * Duas consultas simples em vez de um `include` aninhado junto com `_count`:
+   * é mais previsível sob o pooler (pgbouncer) e, com zero treinos, nem chega a
+   * tocar em `WorkoutAssignment` — a tela do admin abre mesmo num banco recém-criado.
+   */
   async listAll(): Promise<any[]> {
     const rows = await this.prisma.workout.findMany({
       orderBy: [{ active: 'desc' }, { dayOfWeek: 'asc' }, { createdAt: 'desc' }],
-      include: {
-        _count: { select: { exercises: true } },
-        assignments: { include: { user: { select: { id: true, name: true } } } },
-      },
+      include: { _count: { select: { exercises: true } } },
     });
-    return rows.map(({ assignments, ...w }) => ({
-      ...w,
-      assignees: assignments.map((a) => a.user),
-    }));
+    if (rows.length === 0) return [];
+
+    const assignments = await this.prisma.workoutAssignment.findMany({
+      where: { workoutId: { in: rows.map((w) => w.id) } },
+      include: { user: { select: { id: true, name: true } } },
+    });
+
+    const porTreino = new Map<string, { id: string; name: string }[]>();
+    for (const a of assignments) {
+      const lista = porTreino.get(a.workoutId) ?? [];
+      lista.push(a.user);
+      porTreino.set(a.workoutId, lista);
+    }
+
+    return rows.map((w) => ({ ...w, assignees: porTreino.get(w.id) ?? [] }));
   }
 
   findByIdWithExercises(id: string): Promise<WorkoutWithExercises | null> {
