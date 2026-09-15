@@ -4,6 +4,7 @@ import {
   WorkoutRepository,
 } from '../../domain/workout.repository';
 import { AddExercisesBatchDto } from '../dto/add-exercises-batch.dto';
+import { normalizaPrescricao } from '../prescricao';
 
 /**
  * Adiciona N exercícios de uma vez (E7 — montador em lote).
@@ -32,6 +33,6 @@ export class AddExercisesBatchUseCase {
       return true;
     });
 
-    return this.repo.addExercisesBatch(workoutId, items);
+    return this.repo.addExercisesBatch(workoutId, items.map(normalizaPrescricao));
   }
 }

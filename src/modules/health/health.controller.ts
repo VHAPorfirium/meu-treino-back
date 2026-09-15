@@ -21,6 +21,19 @@ const TABELAS_ESPERADAS = [
   'PushSubscription',
 ] as const;
 
+/**
+ * Colunas que uma migration recente adicionou. Estão aqui pelo mesmo motivo das
+ * tabelas: já aconteceu de uma migration constar como aplicada sem o DDL ter
+ * rodado — e uma coluna faltando quebra só na primeira query que a usa.
+ */
+const COLUNAS_ESPERADAS: [tabela: string, coluna: string][] = [
+  ['WorkoutLog', 'dayKey'], // E9
+  ['WorkoutExercise', 'mode'], // E10
+  ['WorkoutExercise', 'durationSeconds'],
+  ['SetLog', 'durationSeconds'],
+  ['WorkoutExerciseLog', 'totalSeconds'],
+];
+
 type Passo = { ok: boolean; code?: string; error?: string };
 
 function falha(e: unknown): Passo {
@@ -79,6 +92,22 @@ export class HealthController {
     out.missingTables = TABELAS_ESPERADAS.filter((t) => !presentes.includes(t));
     out.tableCount = presentes.length;
 
+    // 1b) colunas novas (migrations recentes)
+    try {
+      const cols = await this.prisma.$queryRaw<
+        { table_name: string; column_name: string }[]
+      >`
+        SELECT table_name, column_name FROM information_schema.columns
+        WHERE table_schema = current_schema()
+      `;
+      const temColuna = new Set(cols.map((c) => `${c.table_name}.${c.column_name}`));
+      out.missingColumns = COLUNAS_ESPERADAS.filter(
+        ([t, c]) => !temColuna.has(`${t}.${c}`),
+      ).map(([t, c]) => `${t}.${c}`);
+    } catch (e) {
+      out.missingColumns = falha(e);
+    }
+
     // 2) o que o Prisma registrou como aplicado
     try {
       const migs = await this.prisma.$queryRaw<
@@ -124,6 +153,8 @@ export class HealthController {
 
     const okGeral =
       (out.missingTables as string[]).length === 0 &&
+      Array.isArray(out.missingColumns) &&
+      (out.missingColumns as string[]).length === 0 &&
       (listAll.step1_workouts as Passo).ok &&
       (listAll.step2_assignments as Passo).ok;
 

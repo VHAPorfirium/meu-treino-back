@@ -1,4 +1,4 @@
-import { Prisma, Workout, WorkoutExercise } from '@prisma/client';
+import { ExerciseMode, Prisma, Workout, WorkoutExercise } from '@prisma/client';
 
 export const WORKOUT_REPOSITORY = Symbol('WORKOUT_REPOSITORY');
 
@@ -14,8 +14,13 @@ export type AssigneeSummary = { id: string; name: string };
 export interface WorkoutExerciseData {
   exerciseId: string;
   order: number;
+  /** E10 — REPS (séries × reps) ou TIME (duração). */
+  mode: ExerciseMode;
   sets: number;
-  reps: string;
+  /** null no modo TIME. */
+  reps: string | null;
+  /** preenchido no modo TIME. */
+  durationSeconds: number | null;
   restSeconds?: number;
   notes?: string;
 }
@@ -82,8 +87,10 @@ export interface WorkoutRepository {
   updateExercise(
     workoutExerciseId: string,
     data: {
+      mode?: ExerciseMode;
       sets?: number;
-      reps?: string;
+      reps?: string | null;
+      durationSeconds?: number | null;
       restSeconds?: number | null;
       notes?: string | null;
     },

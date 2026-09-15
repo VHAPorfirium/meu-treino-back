@@ -10,6 +10,8 @@ export interface SetLogInput {
   setNumber: number;
   weight?: number | null;
   reps?: number | null;
+  /** E10 — duração da série/bloco em segundos (cardio, prancha, alongamento). */
+  durationSeconds?: number | null;
 }
 
 export interface UpsertExerciseLogData {
@@ -18,18 +20,30 @@ export interface UpsertExerciseLogData {
   loadUsed?: number | null;
   setsCompleted?: number | null;
   note?: string | null;
+  /** E10 — agregado: soma dos `durationSeconds` das séries. */
+  totalSeconds?: number | null;
   /** E4 — quando presente, SUBSTITUI todas as séries do registro (replace). */
   sets?: SetLogInput[];
 }
 
 export interface WorkoutLogRepository {
-  findOpenSession(
+  /**
+   * E9 — a sessão de um DIA LOCAL, esteja ela aberta ou concluída.
+   *
+   * Substituiu o antigo `findOpenSession`, que filtrava por `completed: false`:
+   * era isso que fazia o treino concluído "sumir" e reaparecer como disponível.
+   */
+  findSessionOfDay(
     userId: string,
     workoutId: string,
-    since: Date,
+    dayKey: string,
   ): Promise<WorkoutLogWithEntries | null>;
 
-  open(userId: string, workoutId: string): Promise<WorkoutLogWithEntries>;
+  open(
+    userId: string,
+    workoutId: string,
+    dayKey: string,
+  ): Promise<WorkoutLogWithEntries>;
 
   findById(id: string): Promise<WorkoutLog | null>;
 
