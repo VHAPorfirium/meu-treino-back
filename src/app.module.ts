@@ -6,7 +6,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { PrismaModule } from './shared/prisma/prisma.module';
 import { SecurityModule } from './shared/security/security.module';
 import { StorageModule } from './shared/storage/storage.module';
-import { ThrottlerLogFilter } from './shared/security/throttler-log.filter';
+import { AllExceptionsFilter } from './shared/http/all-exceptions.filter';
 import { JwtAuthGuard } from './shared/auth/jwt-auth.guard';
 import { RolesGuard } from './shared/auth/roles.guard';
 
@@ -45,8 +45,9 @@ import { PushModule } from './modules/push/push.module';
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
-    // loga o 429 como evento de segurança (`ratelimit.exceeded`)
-    { provide: APP_FILTER, useClass: ThrottlerLogFilter },
+    // loga a causa real de todo 5xx (+ requestId na resposta) e o 429 como
+    // evento de segurança. Substitui o antigo ThrottlerLogFilter.
+    { provide: APP_FILTER, useClass: AllExceptionsFilter },
   ],
 })
 export class AppModule {}
