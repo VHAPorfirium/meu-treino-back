@@ -32,6 +32,13 @@ export class SetLogDto {
   @Min(0)
   @Max(1000)
   reps?: number;
+
+  /** E10 — duração executada deste bloco, em segundos (cardio/prancha). */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(4 * 60 * 60)
+  durationSeconds?: number;
 }
 
 export class PatchExerciseLogDto {
@@ -53,6 +60,13 @@ export class PatchExerciseLogDto {
   @IsInt()
   @Min(0)
   setsCompleted?: number;
+
+  /** E10 — tempo total. Se `sets` vier, é DERIVADO delas (como loadUsed). */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(4 * 60 * 60)
+  totalSeconds?: number;
 
   @IsOptional()
   @IsString()

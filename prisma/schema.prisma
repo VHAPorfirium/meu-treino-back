@@ -16,6 +16,13 @@ enum Role {
   TRAINEE
 }
 
+// E10 — como o exercício é prescrito e registrado.
+// REPS = séries × repetições (+ carga). TIME = duração (cardio, prancha, alongamento).
+enum ExerciseMode {
+  REPS
+  TIME
+}
+
 enum ExerciseStatus {
   DONE
   SKIPPED
@@ -110,7 +117,9 @@ model WorkoutExercise {
   exerciseId  String
   order       Int
   sets        Int
-  reps        String
+  reps        String? // null quando mode = TIME (E10)
+  mode        ExerciseMode @default(REPS) // E10
+  durationSeconds Int? // prescrição em segundos quando mode = TIME
   restSeconds Int?
   notes       String?
   workout     Workout  @relation(fields: [workoutId], references: [id], onDelete: Cascade)
@@ -125,11 +134,16 @@ model WorkoutLog {
   workoutId    String
   userId       String
   date         DateTime             @default(now())
+  // E9 — dia local ('YYYY-MM-DD' no fuso de APP_TIMEZONE), nao o dia UTC do servidor.
+  // Chave de negocio da regra "uma sessao por treino por dia": treinar 22h em
+  // Brasilia ja e o dia seguinte em UTC, e sem isso o bloqueio abriria sozinho a noite.
+  dayKey       String
   completed    Boolean              @default(false)
   workout      Workout              @relation(fields: [workoutId], references: [id])
   user         User                 @relation(fields: [userId], references: [id])
   exerciseLogs WorkoutExerciseLog[]
 
+  @@unique([userId, workoutId, dayKey])
   @@index([userId, date])
 }
 
@@ -142,6 +156,7 @@ model WorkoutExerciseLog {
   actualExercise    Exercise?      @relation("ActualExercise", fields: [actualExerciseId], references: [id])
   loadUsed          Float? // agregado: max(peso) das séries quando `sets` existir (compat c/ dashboard)
   setsCompleted     Int? // agregado: count(séries) quando `sets` existir
+  totalSeconds      Int? // E10 — agregado: soma dos `durationSeconds` das séries
   note              String?
   sets              SetLog[] // E4 — detalhe por série
   workoutLog        WorkoutLog      @relation(fields: [workoutLogId], references: [id], onDelete: Cascade)
@@ -158,6 +173,7 @@ model SetLog {
   setNumber            Int // 1..N
   weight               Float? // kg
   reps                 Int?
+  durationSeconds      Int? // E10 — execução por tempo
   exerciseLog          WorkoutExerciseLog @relation(fields: [workoutExerciseLogId], references: [id], onDelete: Cascade)
 
   @@unique([workoutExerciseLogId, setNumber])

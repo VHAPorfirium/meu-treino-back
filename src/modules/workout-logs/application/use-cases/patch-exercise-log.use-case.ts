@@ -41,6 +41,7 @@ export class PatchExerciseLogUseCase {
     // E4: se vieram séries, os agregados (compat c/ dashboard) são DERIVADOS delas.
     let loadUsed = dto.loadUsed ?? null;
     let setsCompleted = dto.setsCompleted ?? null;
+    let totalSeconds = dto.totalSeconds ?? null;
     if (dto.sets) {
       const numbers = dto.sets.map((s) => s.setNumber);
       if (new Set(numbers).size !== numbers.length) {
@@ -51,6 +52,15 @@ export class PatchExerciseLogUseCase {
         .filter((w): w is number => typeof w === 'number');
       loadUsed = weights.length ? Math.max(...weights) : null;
       setsCompleted = dto.sets.length;
+
+      // E10 — tempo total é a SOMA das durações (diferente da carga, que é o máximo:
+      // 3 blocos de 10 min são 30 min de cardio, mas 3 séries de 20 kg são 20 kg).
+      const duracoes = dto.sets
+        .map((s) => s.durationSeconds)
+        .filter((d): d is number => typeof d === 'number');
+      totalSeconds = duracoes.length
+        ? duracoes.reduce((a, b) => a + b, 0)
+        : null;
     }
 
     await this.repo.upsertExerciseLog(logId, workoutExerciseId, {
@@ -59,11 +69,13 @@ export class PatchExerciseLogUseCase {
         dto.status === ExerciseStatus.REPLACED ? dto.actualExerciseId : null,
       loadUsed,
       setsCompleted,
+      totalSeconds,
       note: dto.note ?? null,
       sets: dto.sets?.map((s) => ({
         setNumber: s.setNumber,
         weight: s.weight ?? null,
         reps: s.reps ?? null,
+        durationSeconds: s.durationSeconds ?? null,
       })),
     });
 

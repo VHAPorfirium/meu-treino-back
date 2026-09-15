@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Workout, WorkoutExercise } from '@prisma/client';
+import { ExerciseMode, Workout, WorkoutExercise } from '@prisma/client';
 import { PrismaService } from '../../../shared/prisma/prisma.service';
 import {
   AssigneeSummary,
@@ -228,8 +228,10 @@ export class PrismaWorkoutRepository implements WorkoutRepository {
   updateExercise(
     workoutExerciseId: string,
     data: {
+      mode?: ExerciseMode;
       sets?: number;
-      reps?: string;
+      reps?: string | null;
+      durationSeconds?: number | null;
       restSeconds?: number | null;
       notes?: string | null;
     },
@@ -367,8 +369,10 @@ export class PrismaWorkoutRepository implements WorkoutRepository {
             workoutId: copy.id,
             exerciseId: we.exerciseId,
             order: we.order,
+            mode: we.mode, // E10 — senão o cardio duplicado voltaria a ser "3 × null"
             sets: we.sets,
             reps: we.reps,
+            durationSeconds: we.durationSeconds,
             restSeconds: we.restSeconds,
             notes: we.notes,
           })),

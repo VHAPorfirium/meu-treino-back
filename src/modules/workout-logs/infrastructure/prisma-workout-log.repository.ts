@@ -29,21 +29,24 @@ const HISTORY_INCLUDE = {
 export class PrismaWorkoutLogRepository implements WorkoutLogRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  findOpenSession(
+  findSessionOfDay(
     userId: string,
     workoutId: string,
-    since: Date,
+    dayKey: string,
   ): Promise<WorkoutLogWithEntries | null> {
-    return this.prisma.workoutLog.findFirst({
-      where: { userId, workoutId, completed: false, date: { gte: since } },
+    return this.prisma.workoutLog.findUnique({
+      where: { userId_workoutId_dayKey: { userId, workoutId, dayKey } },
       include: ENTRIES_INCLUDE,
-      orderBy: { date: 'desc' },
     });
   }
 
-  open(userId: string, workoutId: string): Promise<WorkoutLogWithEntries> {
+  open(
+    userId: string,
+    workoutId: string,
+    dayKey: string,
+  ): Promise<WorkoutLogWithEntries> {
     return this.prisma.workoutLog.create({
-      data: { userId, workoutId },
+      data: { userId, workoutId, dayKey },
       include: ENTRIES_INCLUDE,
     });
   }
@@ -79,6 +82,7 @@ export class PrismaWorkoutLogRepository implements WorkoutLogRepository {
               setNumber: s.setNumber,
               weight: s.weight ?? null,
               reps: s.reps ?? null,
+              durationSeconds: s.durationSeconds ?? null,
             })),
           });
         }

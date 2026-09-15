@@ -134,6 +134,23 @@ export class ProgressSummaryUseCase {
       deltaPct: v60 ? Math.round(((v30 - v60) / v60) * 100) : 0,
     };
 
+    // ---------- cardio: minutos (E10) ----------
+    // Volume (`cargaTotal`) é peso × séries, então cardio entra como zero e some
+    // da conta — correto, mas deixaria o trabalho aeróbico invisível. Aqui ele
+    // ganha a própria métrica: soma dos `totalSeconds` registrados.
+    const segundosCardio = (list: typeof logs) => {
+      let t = 0;
+      for (const l of list)
+        for (const e of l.exerciseLogs) t += e.totalSeconds ?? 0;
+      return t;
+    };
+    const c30 = segundosCardio(logs30);
+    const c60 = segundosCardio(logs60);
+    const cardio = {
+      minutes: Math.round(c30 / 60),
+      deltaPct: c60 ? Math.round(((c30 - c60) / c60) * 100) : 0,
+    };
+
     // ---------- heatmap 30 dias ----------
     const dayStatus: Record<string, number> = {};
     for (const l of logs) {
@@ -230,6 +247,7 @@ export class ProgressSummaryUseCase {
       adherence,
       streak,
       cargaTotal,
+      cardio,
       heatmap,
       ranking,
       recentNotes,
