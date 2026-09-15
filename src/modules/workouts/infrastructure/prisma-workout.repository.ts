@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Workout, WorkoutExercise } from '@prisma/client';
 import { PrismaService } from '../../../shared/prisma/prisma.service';
 import {
@@ -14,9 +14,51 @@ const FULL_INCLUDE = {
   assignments: { include: { user: { select: { id: true, name: true } } } },
 };
 
+/** mesmo include, sem os destinatários — usado quando `WorkoutAssignment` não existe. */
+const INCLUDE_SEM_ASSIGNMENTS = {
+  exercises: { include: { exercise: true }, orderBy: { order: 'asc' as const } },
+};
+
+/**
+ * P2021 = tabela não existe · P2022 = coluna não existe.
+ * São os dois erros de *drift de schema*: o Prisma Client conhece o modelo, o banco
+ * não tem a tabela. Só eles entram no fallback — qualquer outro erro continua subindo.
+ */
+function ehDriftDeSchema(e: unknown): boolean {
+  const code = (e as { code?: string })?.code;
+  return code === 'P2021' || code === 'P2022';
+}
+
 @Injectable()
 export class PrismaWorkoutRepository implements WorkoutRepository {
+  private readonly log = new Logger(PrismaWorkoutRepository.name);
+
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Executa uma consulta que depende de `WorkoutAssignment`. Se a tabela não existir
+   * no banco (drift de migration), loga em ERROR e devolve `fallback` em vez de
+   * derrubar a requisição inteira com 500.
+   *
+   * Isso é rede de segurança, não correção: o schema é garantido pela migration
+   * `20260915_ensure_frente_b_e`, e `GET /api/health/db` mostra se falta alguma tabela.
+   */
+  private async comAssignments<T>(
+    onde: string,
+    consulta: () => Promise<T>,
+    fallback: () => T | Promise<T>,
+  ): Promise<T> {
+    try {
+      return await consulta();
+    } catch (e) {
+      if (!ehDriftDeSchema(e)) throw e;
+      this.log.error(
+        `[${onde}] tabela WorkoutAssignment indisponível (${(e as { code?: string }).code}) — ` +
+          `respondendo sem destinatários. Rode as migrations: veja GET /api/health/db.`,
+      );
+      return fallback();
+    }
+  }
 
   // ── criação / leitura ──────────────────────────────────────────────────────
 
@@ -61,10 +103,15 @@ export class PrismaWorkoutRepository implements WorkoutRepository {
     });
     if (rows.length === 0) return [];
 
-    const assignments = await this.prisma.workoutAssignment.findMany({
-      where: { workoutId: { in: rows.map((w) => w.id) } },
-      include: { user: { select: { id: true, name: true } } },
-    });
+    const assignments = await this.comAssignments(
+      'listAll',
+      () =>
+        this.prisma.workoutAssignment.findMany({
+          where: { workoutId: { in: rows.map((w) => w.id) } },
+          include: { user: { select: { id: true, name: true } } },
+        }),
+      () => [],
+    );
 
     const porTreino = new Map<string, { id: string; name: string }[]>();
     for (const a of assignments) {
@@ -77,10 +124,23 @@ export class PrismaWorkoutRepository implements WorkoutRepository {
   }
 
   findByIdWithExercises(id: string): Promise<WorkoutWithExercises | null> {
-    return this.prisma.workout.findUnique({
-      where: { id },
-      include: FULL_INCLUDE,
-    });
+    return this.comAssignments(
+      'findByIdWithExercises',
+      () =>
+        this.prisma.workout.findUnique({
+          where: { id },
+          include: FULL_INCLUDE,
+        }),
+      async () => {
+        const w = await this.prisma.workout.findUnique({
+          where: { id },
+          include: INCLUDE_SEM_ASSIGNMENTS,
+        });
+        return w
+          ? ({ ...w, assignments: [] } as unknown as WorkoutWithExercises)
+          : null;
+      },
+    );
   }
 
   async findAlternativesForExercises(exerciseIds: string[]) {
@@ -205,27 +265,42 @@ export class PrismaWorkoutRepository implements WorkoutRepository {
     userId: string,
     dayOfWeek: number,
   ): Promise<WorkoutWithExercises | null> {
-    return this.prisma.workout.findFirst({
-      where: { active: true, dayOfWeek, assignments: { some: { userId } } },
-      include: FULL_INCLUDE,
-      orderBy: { createdAt: 'desc' },
-    });
+    return this.comAssignments(
+      'findAssignedActiveByDay',
+      () =>
+        this.prisma.workout.findFirst({
+          where: { active: true, dayOfWeek, assignments: { some: { userId } } },
+          include: FULL_INCLUDE,
+          orderBy: { createdAt: 'desc' },
+        }),
+      () => null,
+    );
   }
 
   findFirstAssignedActive(userId: string): Promise<WorkoutWithExercises | null> {
-    return this.prisma.workout.findFirst({
-      where: { active: true, assignments: { some: { userId } } },
-      include: FULL_INCLUDE,
-      orderBy: { createdAt: 'desc' },
-    });
+    return this.comAssignments(
+      'findFirstAssignedActive',
+      () =>
+        this.prisma.workout.findFirst({
+          where: { active: true, assignments: { some: { userId } } },
+          include: FULL_INCLUDE,
+          orderBy: { createdAt: 'desc' },
+        }),
+      () => null,
+    );
   }
 
   listAssigned(userId: string): Promise<any[]> {
-    return this.prisma.workout.findMany({
-      where: { assignments: { some: { userId } } },
-      orderBy: [{ active: 'desc' }, { dayOfWeek: 'asc' }, { createdAt: 'desc' }],
-      include: { _count: { select: { exercises: true } } },
-    });
+    return this.comAssignments(
+      'listAssigned',
+      () =>
+        this.prisma.workout.findMany({
+          where: { assignments: { some: { userId } } },
+          orderBy: [{ active: 'desc' }, { dayOfWeek: 'asc' }, { createdAt: 'desc' }],
+          include: { _count: { select: { exercises: true } } },
+        }),
+      () => [],
+    );
   }
 
   // ── E2: reordenar / duplicar ───────────────────────────────────────────────
