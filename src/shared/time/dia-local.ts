@@ -1,7 +1,7 @@
 /**
  * Dia local do app — não o dia UTC do servidor.
  *
- * Por que isso existe: a API roda no Render em **UTC** e a aluna treina no
+ * Por que isso existe: a API roda no servidor em **UTC** e a aluna treina no
  * Brasil (UTC−3). Um treino às 22h39 de segunda é 01h39 de **terça** em UTC.
  * Qualquer regra de "hoje" baseada em `new Date().setHours(0,0,0,0)` do servidor
  * vira o dia às 21h locais — o bloqueio do E9 se abriria sozinho toda noite,

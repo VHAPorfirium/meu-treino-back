@@ -37,7 +37,7 @@ export class CacheService {
   /** requisições em voo por chave — evita N consultas iguais no mesmo instante. */
   private readonly emVoo = new Map<string, Promise<unknown>>();
 
-  /** `CACHE_ENABLED=false` no Render desliga tudo sem redeploy de código. */
+  /** `CACHE_ENABLED=false` desliga o cache sem necessidade de redeploy de código. */
   readonly ativo: boolean;
 
   constructor(@Inject(CACHE_MANAGER) private readonly cache: Cache) {

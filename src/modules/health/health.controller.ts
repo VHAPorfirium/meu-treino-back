@@ -69,7 +69,7 @@ export class HealthController {
     return this.cache.estatisticas();
   }
 
-  // GET /api/health — healthcheck simples (Render/monitoração).
+  // GET /api/health — healthcheck simples (uptime / orquestrador / monitoração).
   @Public()
   @SkipThrottle()
   @Get()

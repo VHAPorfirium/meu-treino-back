@@ -13,8 +13,8 @@ async function bootstrap() {
 
   /**
    * Proxies confiáveis à frente da API (define como `req.ip` é resolvido a partir
-   * de X-Forwarded-For). Local/direto no Render = 1 (o balanceador do Render).
-   * Produção via proxy do Next na Vercel = 2 (Vercel + Render).
+   * de X-Forwarded-For). Local ou Nginx/Caddy na VPS = 1 (o proxy reverso da VPS).
+   * Produção via proxy do Next na Vercel + Nginx = 2.
    * Sem isso, um X-Forwarded-For forjado pelo cliente burlava o lockout por IP.
    */
   app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS ?? 1));

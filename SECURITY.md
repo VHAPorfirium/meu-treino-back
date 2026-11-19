@@ -61,7 +61,7 @@ Uma linha JSON por evento (`kind:"security"`, `app:"ritmo-api"`), sempre com `ip
 `request-id` em toda requisição (header `x-request-id`, gerado se não vier) pra correlacionar erro ↔ evento.
 
 ### Hardening: IP confiável (bypass do lockout fechado)
-Antes, `clientIp()` lia o **primeiro** `X-Forwarded-For` — controlado pelo cliente. Bastava mandar um IP diferente por request pra nunca cair no lockout por IP. Agora a API usa `req.ip` com `trust proxy` = `TRUST_PROXY_HOPS` (Render direto = 1; via proxy do Next na Vercel = 2), e o header forjado é ignorado. Reproduza o "antes/depois" com `ops/attack-sim.sh N URL <ip-falso>`.
+Antes, `clientIp()` lia o **primeiro** `X-Forwarded-For` — controlado pelo cliente. Bastava mandar um IP diferente por request pra nunca cair no lockout por IP. Agora a API usa `req.ip` com `trust proxy` = `TRUST_PROXY_HOPS` (Nginx/VPS direto = 1; via proxy do Next na Vercel = 2), e o header forjado é ignorado. Reproduza o "antes/depois" com `ops/attack-sim.sh N URL <ip-falso>`.
 
 ### Defesa em profundidade: teto global de falhas
 `LoginThrottleService` tem duas camadas: **por IP** (5 falhas/1 min → 5 min) e **global** (30 falhas/1 min → 2 min, todos os IPs). Com PIN de 4 dígitos, o teto global limita o número absoluto de tentativas por minuto mesmo com IPs forjados/distribuídos. O evento `auth.login.locked` carrega `scope: "ip" | "global"`.
@@ -78,5 +78,5 @@ API (stdout JSON) → Docker json-file → **Alloy** (`ops/alloy/config.alloy`) 
 
 ## Próximos passos
 - Refresh tokens + revogação; rotação de `JWT_SECRET`.
-- Logs de produção (Render → Grafana Cloud Loki) reaproveitando o mesmo dashboard.
+- Logs de produção (VPS → Grafana Cloud Loki ou Loki local) reaproveitando o mesmo dashboard.
 - Lockout em Redis se houver mais de uma instância.

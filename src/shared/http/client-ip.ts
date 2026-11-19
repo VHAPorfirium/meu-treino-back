@@ -5,7 +5,7 @@ import type { Request } from 'express';
  *
  * Usa `req.ip`, que o Express resolve a partir de `X-Forwarded-For` respeitando a
  * configuração `trust proxy` (setada no main.ts com TRUST_PROXY_HOPS). Assim só os
- * proxies conhecidos à frente da API (Render; Vercel+Render) são confiáveis, e um
+ * proxies conhecidos à frente da API (Nginx/Caddy na VPS; Vercel + VPS) são confiáveis, e um
  * `X-Forwarded-For` forjado pelo cliente é ignorado.
  *
  * Antes, o código pegava o PRIMEIRO endereço do header — controlado pelo cliente —,

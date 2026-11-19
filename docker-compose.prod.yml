@@ -1,0 +1,45 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: meu-treino-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      # Expõe na interface local (127.0.0.1) para ser acessado pelo proxy reverso (Nginx/Caddy)
+      - "127.0.0.1:${PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e 'require(\"http\").get(\"http://localhost:3000/api/health\", (res) => process.exit(res.statusCode === 200 ? 0 : 1))'"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # Opcional: Banco Postgres local no servidor (se não estiver usando Supabase/DB gerenciado)
+  # Para ativar: descomente este bloco ou use o profile: docker compose -f docker-compose.prod.yml --profile with-db up -d
+  db:
+    image: postgres:16-alpine
+    container_name: meu-treino-db
+    restart: unless-stopped
+    profiles: ["with-db"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-treino}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-treino_seguro}
+      POSTGRES_DB: ${POSTGRES_DB:-meu_treino}
+    volumes:
+      - pgdata_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-treino} -d ${POSTGRES_DB:-meu_treino}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata_prod:

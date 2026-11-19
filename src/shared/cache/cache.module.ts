@@ -7,8 +7,8 @@ import { CacheService } from './cache.service';
  *
  * `max` é teto de ENTRADAS, não de bytes — por isso o número é conservador.
  * Conta de guardanapo: a página maior do catálogo (200 exercícios) dá ~100 KB e
- * a típica (24) ~12 KB; 200 entradas ficam na casa de poucos MB, folgado nos
- * 512 MB do Render free. É a resposta ao risco "memória estourando".
+ * a típica (24) ~12 KB; 200 entradas ficam na casa de poucos MB, consumo mínimo
+ * para a VPS. É a resposta ao risco "memória estourando".
  *
  * Uma instância só → memória basta. Quando virar multi-instância, troca-se o
  * store por Redis aqui e o `CacheService` não muda.

@@ -27,7 +27,7 @@ COPY prisma ./prisma
 # roda `prisma migrate deploy` no boot, então o CLI e os engines são necessários
 # em runtime. Com ele em devDependencies, o `npm ci --omit=dev` não o instalava e
 # o `npx` do CMD baixava o CLI + o **schema-engine** do binaries.prisma.sh
-# A CADA BOOT — em instância free isso custava MINUTOS, e o health check do Render
+# A CADA BOOT — em instâncias lentas isso custava minutos, e o health check
 # ficava esperando a API subir. Agora o download acontece uma vez, aqui no build,
 # e fica assado na camada da imagem.
 #

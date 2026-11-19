@@ -130,11 +130,28 @@ curl -X POST http://localhost:3000/api/auth/login \
 3. `DIRECT_URL` = connection string **direta** (porta 5432) — usada pelas migrations.
 4. (Se `MEDIA_PROVIDER=supabase`) crie um bucket **público** chamado `exercises` e use a `service_role` key.
 
-### Backend — Railway ou Render (Docker)
-1. Suba este repositório; a plataforma detecta o `Dockerfile`.
-2. Configure as envs (`DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `ADMIN_PIN`, `TRAINEE_PIN`, `CORS_ORIGIN`, etc.).
-3. O container roda `prisma migrate deploy` no boot e sobe a API.
-4. Rode o seed **uma vez** (localmente apontando `DATABASE_URL` p/ produção, ou via console da plataforma): `npm run seed`.
+### Backend — VPS própria (Docker)
+1. Clone o repositório na VPS:
+   ```bash
+   git clone <URL_DO_REPO> meu-treino-back
+   cd meu-treino-back
+   ```
+2. Crie e preencha as variáveis de produção:
+   ```bash
+   cp .env.production.example .env
+   nano .env
+   ```
+3. Suba o backend:
+   ```bash
+   docker compose -f docker-compose.prod.yml up -d --build
+   ```
+   *(Ou execute `./ops/deploy-vps.sh`)*
+   O container aplica as migrações Prisma (`prisma migrate deploy`) automaticamente na inicialização e expõe a porta `3000` em `127.0.0.1`.
+4. Configure o proxy reverso (Nginx ou Caddy) com SSL (veja o modelo em `ops/nginx/api.conf`).
+5. Execute o seed caso seja a primeira instalação:
+   ```bash
+   docker compose -f docker-compose.prod.yml exec api npm run seed
+   ```
 
 ### Frontend — Vercel
 Ver `../meu-treino-front` (Fase 2). `NEXT_PUBLIC_API_URL` aponta para a URL pública do backend.
