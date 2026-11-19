@@ -68,14 +68,19 @@ interface RawExercise {
 }
 
 // ---------- helpers ----------
-function loadDataset(): RawExercise[] {
+async function loadDataset(): Promise<RawExercise[]> {
   const file = path.resolve(process.cwd(), DATASET_PATH, 'data/exercises.json');
-  if (!fs.existsSync(file)) {
-    throw new Error(
-      `Dataset não encontrado em ${file}. Ajuste DATASET_PATH no .env`,
-    );
+  if (fs.existsSync(file)) {
+    return JSON.parse(fs.readFileSync(file, 'utf-8')) as RawExercise[];
   }
-  return JSON.parse(fs.readFileSync(file, 'utf-8')) as RawExercise[];
+  console.log(`Dataset local não encontrado em ${file}.`);
+  console.log(`Baixando catálogo oficial diretamente do repositório remoto...`);
+  const url = `${RAW_BASE}data/exercises.json`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Falha ao baixar dataset de ${url} (HTTP ${res.status}).`);
+  }
+  return (await res.json()) as RawExercise[];
 }
 
 // ----- tradução -----
@@ -157,7 +162,7 @@ async function resolveMedia(relPath: string): Promise<string> {
 // ---------- main ----------
 async function main() {
   console.log('== SEED: iniciando ==');
-  const dataset = loadDataset();
+  const dataset = await loadDataset();
   console.log(`Dataset: ${dataset.length} exercícios`);
   loadCache();
   initSupabase();
