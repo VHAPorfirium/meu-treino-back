@@ -19,7 +19,7 @@
     "db:reset": "prisma migrate reset --force",
     "test": "jest",
     "test:watch": "jest --watch",
-    "seed:traducoes": "ts-node prisma/seed-traducoes.ts"
+    "seed:traducoes": "ts-node --transpile-only prisma/seed-traducoes.ts"
   },
   "prisma": {
     "seed": "ts-node --transpile-only prisma/seed.ts"
