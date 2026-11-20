@@ -42,6 +42,10 @@ RUN npm ci --omit=dev \
 
 COPY --from=build /app/dist ./dist
 
+# Hardening: roda o container como usuário sem privilégios administrativos
+RUN chown -R node:node /app
+USER node
+
 EXPOSE 3000
 # Aplica as migrations versionadas (prisma/migrations) e sobe a API.
 # `migrate deploy` é idempotente e NÃO destrói dados — substituiu o antigo `db push --accept-data-loss`

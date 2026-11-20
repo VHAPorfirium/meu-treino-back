@@ -17,9 +17,9 @@ export interface SeedUser {
 }
 
 export const USERS: SeedUser[] = [
-  { name: 'Admin', role: Role.ADMIN, pin: process.env.ADMIN_PIN ?? '0000' },
-  { name: 'Victor Hugo', role: Role.TRAINEE, pin: process.env.VICTOR_PIN ?? '1009' },
-  { name: 'Ninfa', role: Role.TRAINEE, pin: process.env.NINFA_PIN ?? '3003' },
+  { name: 'Admin', role: Role.ADMIN, pin: process.env.ADMIN_PIN ?? '9841' },
+  { name: 'Victor Hugo', role: Role.TRAINEE, pin: process.env.VICTOR_PIN ?? '5823' },
+  { name: 'Ninfa', role: Role.TRAINEE, pin: process.env.NINFA_PIN ?? '7194' },
 ];
 
 /**

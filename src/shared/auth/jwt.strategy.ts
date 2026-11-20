@@ -3,6 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import type { Request } from 'express';
 import { AuthUser, JwtPayload } from './jwt-payload';
+import { getJwtSecret } from './jwt-secret';
 
 export const AUTH_COOKIE = 'mt_token';
 
@@ -20,7 +21,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         ExtractJwt.fromAuthHeaderAsBearerToken(),
       ]),
       ignoreExpiration: false,
-      secretOrKey: process.env.JWT_SECRET ?? 'dev-secret-troque-em-producao',
+      secretOrKey: getJwtSecret(),
     });
   }
 
