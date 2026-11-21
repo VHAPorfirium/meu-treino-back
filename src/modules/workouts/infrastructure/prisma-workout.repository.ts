@@ -129,7 +129,10 @@ export class PrismaWorkoutRepository implements WorkoutRepository {
   async listAll(): Promise<any[]> {
     const rows = await this.prisma.workout.findMany({
       orderBy: [{ active: 'desc' }, { dayOfWeek: 'asc' }, { createdAt: 'desc' }],
-      include: { _count: { select: { exercises: true } } },
+      include: {
+        _count: { select: { exercises: true } },
+        program: { select: { id: true, name: true, type: true } }, // programa ao qual pertence
+      },
     });
     if (rows.length === 0) return [];
 
@@ -331,7 +334,10 @@ export class PrismaWorkoutRepository implements WorkoutRepository {
         this.prisma.workout.findMany({
           where: { assignments: { some: { userId } } },
           orderBy: [{ active: 'desc' }, { dayOfWeek: 'asc' }, { createdAt: 'desc' }],
-          include: { _count: { select: { exercises: true } } },
+          include: {
+            _count: { select: { exercises: true } },
+            program: { select: { id: true, name: true, type: true } },
+          },
         }),
       () => [],
     );

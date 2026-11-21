@@ -29,6 +29,19 @@ enum ExerciseStatus {
   REPLACED
 }
 
+// Programas — define se o aluno está num treino constante ou numa jornada com prazo.
+enum ProgramType {
+  CONTINUOUS // treino normal, constante, sem data para acabar
+  MESOCYCLE // fase com duração em semanas
+  CHALLENGE // desafio com prazo fechado em dias (ex: 30 dias)
+}
+
+enum ProgramStatus {
+  ACTIVE // em andamento
+  COMPLETED // prazo cumprido (mesociclo/desafio) — gera relatório e conquista
+  ARCHIVED // encerrado ou substituído por outro programa
+}
+
 model User {
   id                String               @id @default(cuid())
   name              String               @unique // identifica a pessoa; usado no seed p/ upsert idempotente
@@ -40,6 +53,7 @@ model User {
   notesSent         TrainerNote[]        @relation("NotesSent")
   notesReceived     TrainerNote[]        @relation("NotesReceived")
   pushSubscriptions PushSubscription[]
+  programAssignments ProgramAssignment[] // programas/desafios dos quais o aluno participa
   createdAt         DateTime             @default(now())
 }
 
@@ -102,7 +116,11 @@ model Workout {
   exercises   WorkoutExercise[]
   logs        WorkoutLog[]
   assignments WorkoutAssignment[] // a quem este treino é direcionado (E1.1)
+  programId   String? // programa (contínuo, mesociclo ou desafio) ao qual o treino pertence
+  program     TrainingProgram?    @relation(fields: [programId], references: [id], onDelete: SetNull)
   createdAt   DateTime            @default(now())
+
+  @@index([programId])
 }
 
 /// E1.1 — treino direcionado: 1 treino → N alunos, sem duplicar o treino.
@@ -221,4 +239,40 @@ model PushSubscription {
   auth      String
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Programa de treino — um "modelo" reutilizável. O tipo define se é um treino
+/// constante (CONTINUOUS) ou uma jornada com prazo (MESOCYCLE / CHALLENGE).
+/// Regras de duração: ver `ProgramDurationPolicy` no módulo programs.
+model TrainingProgram {
+  id          String              @id @default(cuid())
+  name        String
+  description String?
+  type        ProgramType         @default(CONTINUOUS)
+  targetWeeks Int? // só MESOCYCLE
+  targetDays  Int? // só CHALLENGE
+  workouts    Workout[]
+  assignments ProgramAssignment[]
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+}
+
+/// Participação de um aluno num programa: cada aluno tem o próprio "Dia 1",
+/// status e relatório — o mesmo programa pode ser atribuído a vários alunos.
+model ProgramAssignment {
+  id          String          @id @default(cuid())
+  programId   String
+  userId      String
+  // 'YYYY-MM-DD' no fuso do app (mesma régua do WorkoutLog.dayKey) — é o "Dia 1"
+  startDayKey String
+  startDate   DateTime        @default(now())
+  endDate     DateTime?
+  status      ProgramStatus   @default(ACTIVE)
+  reportData  Json? // relatório gerado na conclusão
+  program     TrainingProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime        @default(now())
+
+  @@index([userId, status])
+  @@index([programId])
 }

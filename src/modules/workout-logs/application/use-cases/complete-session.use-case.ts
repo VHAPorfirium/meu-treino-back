@@ -10,6 +10,10 @@ import {
 } from '../../domain/workout-log.repository';
 import { CacheService } from '../../../../shared/cache/cache.service';
 import { invalidarProgresso } from './invalida-progresso';
+import {
+  CompleteProgramIfFinishedUseCase,
+  ProgramCompletionResult,
+} from '../../../programs/application/use-cases/complete-program-if-finished.use-case';
 
 @Injectable()
 export class CompleteSessionUseCase {
@@ -17,6 +21,7 @@ export class CompleteSessionUseCase {
     @Inject(WORKOUT_LOG_REPOSITORY)
     private readonly repo: WorkoutLogRepository,
     private readonly cache: CacheService,
+    private readonly completeProgramIfFinished: CompleteProgramIfFinishedUseCase,
   ) {}
 
   async execute(userId: string, logId: string) {
@@ -26,6 +31,22 @@ export class CompleteSessionUseCase {
       throw new ForbiddenException('Sessão de outro usuário');
     const feito = await this.repo.complete(logId);
     await invalidarProgresso(this.cache, userId);
-    return feito;
+    const programCompletion = await this.checkProgramCompletion(userId, log.workoutId);
+    return { ...feito, programCompletion };
+  }
+
+  /**
+   * Se este treino fechou o último dia de um desafio/mesociclo, a jornada é
+   * encerrada aqui. Nunca derruba a finalização: a sessão já foi gravada.
+   */
+  private async checkProgramCompletion(
+    userId: string,
+    workoutId: string,
+  ): Promise<ProgramCompletionResult | null> {
+    try {
+      return await this.completeProgramIfFinished.execute(userId, workoutId);
+    } catch {
+      return null;
+    }
   }
 }

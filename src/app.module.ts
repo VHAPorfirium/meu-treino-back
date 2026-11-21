@@ -22,6 +22,7 @@ import { HealthModule } from './modules/health/health.module';
 import { NotesModule } from './modules/notes/notes.module';
 import { ProgressPhotosModule } from './modules/progress-photos/progress-photos.module';
 import { PushModule } from './modules/push/push.module';
+import { ProgramsModule } from './modules/programs/programs.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { PushModule } from './modules/push/push.module';
     PushModule,
     NotesModule,
     ProgressPhotosModule,
+    ProgramsModule,
   ],
   providers: [
     // 1) rate limit  2) autentica  3) checa papel

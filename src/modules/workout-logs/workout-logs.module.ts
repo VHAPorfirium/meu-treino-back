@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ProgramsModule } from '../programs/programs.module';
 import { WorkoutLogsController } from './workout-logs.controller';
 import { WORKOUT_LOG_REPOSITORY } from './domain/workout-log.repository';
 import { PrismaWorkoutLogRepository } from './infrastructure/prisma-workout-log.repository';
@@ -10,6 +11,7 @@ import { MyHistoryUseCase } from './application/use-cases/my-history.use-case';
 import { ProgressSummaryUseCase } from './application/use-cases/progress-summary.use-case';
 
 @Module({
+  imports: [ProgramsModule],
   controllers: [WorkoutLogsController],
   providers: [
     { provide: WORKOUT_LOG_REPOSITORY, useClass: PrismaWorkoutLogRepository },
