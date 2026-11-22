@@ -8,3 +8,6 @@
 !.env.example
 .DS_Store
 !.env.production.example
+
+# backups gerados pelo ops/deploy-vps.sh na VPS
+backups/
