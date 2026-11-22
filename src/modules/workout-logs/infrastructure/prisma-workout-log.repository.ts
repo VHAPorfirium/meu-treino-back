@@ -1,11 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { WorkoutLog } from '@prisma/client';
+import { ExerciseStatus, Role, WorkoutLog } from '@prisma/client';
 import { PrismaService } from '../../../shared/prisma/prisma.service';
 import {
+  LastPerformanceRecord,
+  PrescribedWorkoutExercise,
   UpsertExerciseLogData,
   WorkoutLogRepository,
   WorkoutLogWithEntries,
 } from '../domain/workout-log.repository';
+import { ExercisePerformanceRecord } from '../domain/exercise-stats-calculator';
+import { TraineeActivity } from '../domain/attention-rules';
 
 /** include padrão: logs de exercício com as séries (E4) ordenadas. */
 const ENTRIES_INCLUDE = {
@@ -14,7 +18,7 @@ const ENTRIES_INCLUDE = {
 
 /** include p/ histórico: joins de exercício + séries. */
 const HISTORY_INCLUDE = {
-  workout: { select: { id: true, name: true } },
+  workout: { select: { id: true, name: true, program: { select: { id: true, name: true, type: true } } } },
   user: { select: { id: true, name: true } },
   exerciseLogs: {
     include: {
@@ -128,6 +132,127 @@ export class PrismaWorkoutLogRepository implements WorkoutLogRepository {
   countSessions(since: Date): Promise<number> {
     return this.prisma.workoutLog.count({
       where: { completed: true, date: { gte: since } },
+    });
+  }
+
+  async listPrescribedExercises(workoutId: string): Promise<PrescribedWorkoutExercise[]> {
+    const workoutExercises = await this.prisma.workoutExercise.findMany({
+      where: { workoutId },
+      select: { id: true, exerciseId: true, mode: true, reps: true },
+    });
+    return workoutExercises.map((workoutExercise) => ({
+      workoutExerciseId: workoutExercise.id,
+      exerciseId: workoutExercise.exerciseId,
+      mode: workoutExercise.mode,
+      reps: workoutExercise.reps,
+    }));
+  }
+
+  async findLastPerformances(
+    userId: string,
+    exerciseIds: string[],
+    beforeDayKey: string,
+  ): Promise<LastPerformanceRecord[]> {
+    if (exerciseIds.length === 0) return [];
+    const performedLogs = await this.prisma.workoutExerciseLog.findMany({
+      where: {
+        workoutLog: { userId, dayKey: { lt: beforeDayKey } },
+        status: { in: [ExerciseStatus.DONE, ExerciseStatus.REPLACED] },
+        OR: [
+          { actualExerciseId: { in: exerciseIds } },
+          { actualExerciseId: null, workoutExercise: { exerciseId: { in: exerciseIds } } },
+        ],
+      },
+      orderBy: { workoutLog: { date: 'desc' } },
+      take: 300,
+      select: {
+        loadUsed: true,
+        totalSeconds: true,
+        actualExerciseId: true,
+        workoutExercise: { select: { exerciseId: true } },
+        workoutLog: { select: { date: true } },
+        sets: {
+          orderBy: { setNumber: 'asc' },
+          select: { setNumber: true, weight: true, reps: true, durationSeconds: true },
+        },
+      },
+    });
+
+    const lastPerformanceByExerciseId = new Map<string, LastPerformanceRecord>();
+    for (const performedLog of performedLogs) {
+      const exerciseId = performedLog.actualExerciseId ?? performedLog.workoutExercise.exerciseId;
+      if (lastPerformanceByExerciseId.has(exerciseId)) continue; // já veio o mais recente
+      lastPerformanceByExerciseId.set(exerciseId, {
+        exerciseId,
+        performedAt: performedLog.workoutLog.date,
+        loadUsed: performedLog.loadUsed,
+        totalSeconds: performedLog.totalSeconds,
+        sets: performedLog.sets,
+      });
+    }
+    return [...lastPerformanceByExerciseId.values()];
+  }
+
+  async listExercisePerformances(userId: string, exerciseId: string): Promise<ExercisePerformanceRecord[]> {
+    const performedLogs = await this.prisma.workoutExerciseLog.findMany({
+      where: {
+        workoutLog: { userId },
+        status: { in: [ExerciseStatus.DONE, ExerciseStatus.REPLACED] },
+        OR: [{ actualExerciseId: exerciseId }, { actualExerciseId: null, workoutExercise: { exerciseId } }],
+      },
+      orderBy: { workoutLog: { date: 'asc' } },
+      select: { loadUsed: true, workoutLog: { select: { date: true } }, sets: { select: { weight: true } } },
+    });
+    return performedLogs.map((performedLog) => {
+      const setWeights = performedLog.sets
+        .map((performedSet) => performedSet.weight)
+        .filter((weight): weight is number => weight !== null);
+      return {
+        performedAt: performedLog.workoutLog.date,
+        heaviestWeight: setWeights.length ? Math.max(...setWeights) : performedLog.loadUsed,
+      };
+    });
+  }
+
+  async listTraineeActivities(skippedSince: Date): Promise<TraineeActivity[]> {
+    const trainees = await this.prisma.user.findMany({
+      where: { role: Role.TRAINEE },
+      select: {
+        id: true,
+        name: true,
+        workoutLogs: { where: { completed: true }, orderBy: { date: 'desc' }, take: 1, select: { date: true } },
+      },
+    });
+
+    const skippedLogs = await this.prisma.workoutExerciseLog.findMany({
+      where: { status: ExerciseStatus.SKIPPED, workoutLog: { date: { gte: skippedSince } } },
+      select: {
+        workoutLog: { select: { userId: true } },
+        workoutExercise: { select: { exercise: { select: { name: true, namePt: true } } } },
+      },
+    });
+
+    const skippedCountByUserAndExercise = new Map<string, Map<string, number>>();
+    for (const skippedLog of skippedLogs) {
+      const exerciseName = skippedLog.workoutExercise.exercise.namePt ?? skippedLog.workoutExercise.exercise.name;
+      const countByExercise = skippedCountByUserAndExercise.get(skippedLog.workoutLog.userId) ?? new Map<string, number>();
+      countByExercise.set(exerciseName, (countByExercise.get(exerciseName) ?? 0) + 1);
+      skippedCountByUserAndExercise.set(skippedLog.workoutLog.userId, countByExercise);
+    }
+
+    return trainees.map((trainee) => {
+      const countByExercise = skippedCountByUserAndExercise.get(trainee.id);
+      const mostSkippedEntry = countByExercise
+        ? [...countByExercise.entries()].sort((first, second) => second[1] - first[1])[0]
+        : undefined;
+      return {
+        userId: trainee.id,
+        userName: trainee.name,
+        lastCompletedWorkoutAt: trainee.workoutLogs[0]?.date ?? null,
+        mostSkippedExercise: mostSkippedEntry
+          ? { exerciseName: mostSkippedEntry[0], skippedCount: mostSkippedEntry[1] }
+          : null,
+      };
     });
   }
 }

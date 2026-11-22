@@ -8,6 +8,13 @@ import {
 } from './application/use-cases/list-exercises.use-case';
 import { GetAlternativesUseCase } from './application/use-cases/get-alternatives.use-case';
 import { GetExerciseUseCase } from './application/use-cases/get-exercise.use-case';
+import {
+  AddFavoriteExerciseUseCase,
+  ListFavoriteExercisesUseCase,
+  RemoveFavoriteExerciseUseCase,
+} from './application/use-cases/favorite-exercises.use-cases';
+import { FAVORITE_EXERCISE_REPOSITORY } from './domain/favorite-exercise.repository';
+import { PrismaFavoriteExerciseRepository } from './infrastructure/prisma-favorite-exercise.repository';
 
 @Module({
   controllers: [ExercisesController],
@@ -17,6 +24,10 @@ import { GetExerciseUseCase } from './application/use-cases/get-exercise.use-cas
     ListEquipmentUseCase,
     GetAlternativesUseCase,
     GetExerciseUseCase,
+    { provide: FAVORITE_EXERCISE_REPOSITORY, useClass: PrismaFavoriteExerciseRepository },
+    ListFavoriteExercisesUseCase,
+    AddFavoriteExerciseUseCase,
+    RemoveFavoriteExerciseUseCase,
   ],
   exports: [EXERCISE_REPOSITORY],
 })

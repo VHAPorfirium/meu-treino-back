@@ -54,6 +54,7 @@ model User {
   notesReceived     TrainerNote[]        @relation("NotesReceived")
   pushSubscriptions PushSubscription[]
   programAssignments ProgramAssignment[] // programas/desafios dos quais o aluno participa
+  favoriteExercises  FavoriteExercise[] // exercícios marcados com estrela
   createdAt         DateTime             @default(now())
 }
 
@@ -90,6 +91,7 @@ model Exercise {
   alternativesTo   ExerciseAlternative[] @relation("AlternativeExercise")
   workoutExercises WorkoutExercise[]
   actualInLogs     WorkoutExerciseLog[]  @relation("ActualExercise")
+  favoritedBy      FavoriteExercise[]
 
   createdAt DateTime @default(now())
 
@@ -275,4 +277,17 @@ model ProgramAssignment {
 
   @@index([userId, status])
   @@index([programId])
+}
+
+/// Exercício favoritado por um usuário (aluno ou personal) — atalho no catálogo.
+model FavoriteExercise {
+  id         String   @id @default(cuid())
+  userId     String
+  exerciseId String
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exercise   Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, exerciseId])
+  @@index([userId])
 }

@@ -19,6 +19,9 @@ import { CompleteSessionUseCase } from './application/use-cases/complete-session
 import { HistoryUseCase } from './application/use-cases/history.use-case';
 import { MyHistoryUseCase } from './application/use-cases/my-history.use-case';
 import { ProgressSummaryUseCase } from './application/use-cases/progress-summary.use-case';
+import { GetLastPerformanceUseCase } from './application/use-cases/get-last-performance.use-case';
+import { GetExerciseStatsUseCase } from './application/use-cases/get-exercise-stats.use-case';
+import { ListAttentionItemsUseCase } from './application/use-cases/list-attention-items.use-case';
 
 @Controller('workout-logs')
 export class WorkoutLogsController {
@@ -29,6 +32,9 @@ export class WorkoutLogsController {
     private readonly history: HistoryUseCase,
     private readonly myHistory: MyHistoryUseCase,
     private readonly progress: ProgressSummaryUseCase,
+    private readonly getLastPerformance: GetLastPerformanceUseCase,
+    private readonly getExerciseStats: GetExerciseStatsUseCase,
+    private readonly listAttentionItems: ListAttentionItemsUseCase,
   ) {}
 
   // POST /api/workout-logs  { workoutId }  (TRAINEE) — abre/retoma sessão do dia
@@ -55,6 +61,27 @@ export class WorkoutLogsController {
   @Patch(':id/complete')
   complete(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.completeSession.execute(user.userId, id);
+  }
+
+  // GET /api/workout-logs/last-performance?workoutId=  — "última vez" + sugestão de carga
+  @Roles(Role.TRAINEE, Role.ADMIN)
+  @Get('last-performance')
+  lastPerformance(@CurrentUser() user: AuthUser, @Query('workoutId') workoutId: string) {
+    return this.getLastPerformance.execute(user.userId, workoutId);
+  }
+
+  // GET /api/workout-logs/exercise-stats/:exerciseId — números do aluno no exercício
+  @Roles(Role.TRAINEE, Role.ADMIN)
+  @Get('exercise-stats/:exerciseId')
+  exerciseStats(@CurrentUser() user: AuthUser, @Param('exerciseId') exerciseId: string) {
+    return this.getExerciseStats.execute(user.userId, exerciseId);
+  }
+
+  // GET /api/workout-logs/attention  (ADMIN) — "Precisa de atenção" do dashboard
+  @Roles(Role.ADMIN)
+  @Get('attention')
+  attention() {
+    return this.listAttentionItems.execute();
   }
 
   // GET /api/workout-logs/history  (ADMIN)

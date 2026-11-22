@@ -3,14 +3,13 @@ import {
   WORKOUT_REPOSITORY,
   WorkoutRepository,
 } from '../../domain/workout.repository';
-import { PrismaService } from '../../../../shared/prisma/prisma.service';
+import { diaDaSemanaLocal } from '../../../../shared/time/dia-local';
 import {
-  diaDaSemanaLocal,
-  diaLocal,
-  proximaOcorrencia,
-} from '../../../../shared/time/dia-local';
+  EMPTY_SESSION_RESPONSE,
+  WorkoutSessionBuilder,
+} from '../services/workout-session-builder.service';
 
-export type StatusDoDia = 'nao_iniciado' | 'em_andamento' | 'concluido';
+export type { StatusDoDia } from '../services/workout-session-builder.service';
 
 /**
  * Treino "de hoje" do usuário logado (E1.1 — só treinos DIRECIONADOS a ele):
@@ -23,7 +22,7 @@ export class GetTodayWorkoutUseCase {
   constructor(
     @Inject(WORKOUT_REPOSITORY)
     private readonly repo: WorkoutRepository,
-    private readonly prisma: PrismaService,
+    private readonly workoutSessionBuilder: WorkoutSessionBuilder,
   ) {}
 
   async execute(userId: string, dayOfWeekOverride?: number) {
@@ -38,80 +37,7 @@ export class GetTodayWorkoutUseCase {
       isFallback = workout !== null;
     }
 
-    if (!workout) {
-      return {
-        workout: null,
-        workoutLog: null,
-        isFallback: false,
-        status: 'nao_iniciado' as StatusDoDia,
-        concluidoEm: null,
-        proximaLiberacao: null,
-      };
-    }
-
-    const exerciseIds = workout.exercises.map((we) => we.exerciseId);
-    const altMap = await this.repo.findAlternativesForExercises(exerciseIds);
-
-    /**
-     * E9 — a sessão do dia, **aberta ou concluída**.
-     *
-     * Antes havia um `completed: false` aqui: assim que a aluna finalizava, a
-     * sessão sumia da resposta, o front via `workoutLog: null` e voltava a
-     * oferecer "Iniciar treino" — e um novo POST criava uma segunda sessão do
-     * mesmo dia, que contava em dobro em todas as métricas.
-     */
-    const dayKey = diaLocal();
-    const sessao = await this.prisma.workoutLog.findUnique({
-      where: { userId_workoutId_dayKey: { userId, workoutId: workout.id, dayKey } },
-      include: {
-        exerciseLogs: { include: { sets: { orderBy: { setNumber: 'asc' } } } },
-      },
-    });
-
-    const status: StatusDoDia = !sessao
-      ? 'nao_iniciado'
-      : sessao.completed
-        ? 'concluido'
-        : 'em_andamento';
-
-    return {
-      isFallback,
-      workoutLog: sessao,
-      status,
-      concluidoEm: sessao?.completed ? sessao.date.toISOString() : null,
-      // só faz sentido quando está travado; 'YYYY-MM-DD' no fuso do app
-      proximaLiberacao: sessao?.completed
-        ? proximaOcorrencia(workout.dayOfWeek, dayKey)
-        : null,
-      workout: {
-        id: workout.id,
-        name: workout.name,
-        dayOfWeek: workout.dayOfWeek,
-        exercises: workout.exercises.map((we) => ({
-          id: we.id,
-          order: we.order,
-          sets: we.sets,
-          reps: we.reps,
-          mode: we.mode, // E10
-          durationSeconds: we.durationSeconds, // E10
-          restSeconds: we.restSeconds,
-          notes: we.notes,
-          exercise: {
-            id: we.exercise.id,
-            name: we.exercise.name,
-            namePt: we.exercise.namePt, // E11
-            target: we.exercise.target,
-            targetPt: we.exercise.targetPt,
-            bodyPart: we.exercise.bodyPart, // o front usa pra sugerir modo TIME
-            equipment: we.exercise.equipment,
-            equipmentPt: we.exercise.equipmentPt,
-            gifUrl: we.exercise.gifUrl,
-            thumbnailUrl: we.exercise.thumbnailUrl,
-            instructions: we.exercise.instructions,
-          },
-          alternatives: altMap[we.exerciseId] ?? [],
-        })),
-      },
-    };
+    if (!workout) return EMPTY_SESSION_RESPONSE;
+    return this.workoutSessionBuilder.build(userId, workout, isFallback);
   }
 }

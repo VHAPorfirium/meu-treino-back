@@ -9,6 +9,9 @@ import { CompleteSessionUseCase } from './application/use-cases/complete-session
 import { HistoryUseCase } from './application/use-cases/history.use-case';
 import { MyHistoryUseCase } from './application/use-cases/my-history.use-case';
 import { ProgressSummaryUseCase } from './application/use-cases/progress-summary.use-case';
+import { GetLastPerformanceUseCase } from './application/use-cases/get-last-performance.use-case';
+import { GetExerciseStatsUseCase } from './application/use-cases/get-exercise-stats.use-case';
+import { ListAttentionItemsUseCase } from './application/use-cases/list-attention-items.use-case';
 
 @Module({
   imports: [ProgramsModule],
@@ -21,6 +24,9 @@ import { ProgressSummaryUseCase } from './application/use-cases/progress-summary
     HistoryUseCase,
     MyHistoryUseCase,
     ProgressSummaryUseCase,
+    GetLastPerformanceUseCase,
+    GetExerciseStatsUseCase,
+    ListAttentionItemsUseCase,
   ],
 })
 export class WorkoutLogsModule {}

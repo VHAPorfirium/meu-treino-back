@@ -36,6 +36,7 @@ import { SetAssigneesUseCase } from './application/use-cases/set-assignees.use-c
 import { ReorderExercisesUseCase } from './application/use-cases/reorder-exercises.use-case';
 import { DuplicateWorkoutUseCase } from './application/use-cases/duplicate-workout.use-case';
 import { ListMyWorkoutsUseCase } from './application/use-cases/list-my-workouts.use-case';
+import { GetWorkoutSessionUseCase } from './application/use-cases/get-workout-session.use-case';
 
 @Controller('workouts')
 export class WorkoutsController {
@@ -54,6 +55,7 @@ export class WorkoutsController {
     private readonly reorderExercises: ReorderExercisesUseCase,
     private readonly duplicateWorkout: DuplicateWorkoutUseCase,
     private readonly listMine: ListMyWorkoutsUseCase,
+    private readonly getWorkoutSession: GetWorkoutSessionUseCase,
   ) {}
 
   // ── leitura da aluna ───────────────────────────────────────────────────────
@@ -74,6 +76,13 @@ export class WorkoutsController {
   @Get('mine')
   mine(@CurrentUser() user: AuthUser) {
     return this.listMine.execute(user.userId);
+  }
+
+  // GET /api/workouts/:id/session — treino escolhido pelo aluno + sessão do dia
+  @Roles(Role.TRAINEE, Role.ADMIN)
+  @Get(':id/session')
+  session(@CurrentUser() user: AuthUser, @Param('id') workoutId: string) {
+    return this.getWorkoutSession.execute(user.userId, workoutId);
   }
 
   // ── gestão (admin) ─────────────────────────────────────────────────────────

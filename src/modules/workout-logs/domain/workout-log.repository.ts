@@ -1,4 +1,6 @@
-import { ExerciseStatus, Prisma, WorkoutLog } from '@prisma/client';
+import { ExerciseMode, ExerciseStatus, Prisma, WorkoutLog } from '@prisma/client';
+import { ExercisePerformanceRecord } from './exercise-stats-calculator';
+import { TraineeActivity } from './attention-rules';
 
 export const WORKOUT_LOG_REPOSITORY = Symbol('WORKOUT_LOG_REPOSITORY');
 
@@ -24,6 +26,22 @@ export interface UpsertExerciseLogData {
   totalSeconds?: number | null;
   /** E4 — quando presente, SUBSTITUI todas as séries do registro (replace). */
   sets?: SetLogInput[];
+}
+
+/** Como o aluno fez um exercício da última vez (antes de hoje). */
+export interface LastPerformanceRecord {
+  exerciseId: string;
+  performedAt: Date;
+  loadUsed: number | null;
+  totalSeconds: number | null;
+  sets: { setNumber: number; weight: number | null; reps: number | null; durationSeconds: number | null }[];
+}
+
+export interface PrescribedWorkoutExercise {
+  workoutExerciseId: string;
+  exerciseId: string;
+  mode: ExerciseMode;
+  reps: string | null;
 }
 
 export interface WorkoutLogRepository {
@@ -63,4 +81,20 @@ export interface WorkoutLogRepository {
   allExerciseLogs(since?: Date): Promise<any[]>;
 
   countSessions(since: Date): Promise<number>;
+
+  /** Exercícios prescritos de um treino (para "última vez" e sugestão de carga). */
+  listPrescribedExercises(workoutId: string): Promise<PrescribedWorkoutExercise[]>;
+
+  /** Registro mais recente de cada exercício feito pelo aluno antes de `beforeDayKey`. */
+  findLastPerformances(
+    userId: string,
+    exerciseIds: string[],
+    beforeDayKey: string,
+  ): Promise<LastPerformanceRecord[]>;
+
+  /** Todas as vezes que o aluno fez o exercício (feito ou como substituto), em ordem cronológica. */
+  listExercisePerformances(userId: string, exerciseId: string): Promise<ExercisePerformanceRecord[]>;
+
+  /** Último treino concluído e exercício mais pulado de cada aluno (TRAINEE). */
+  listTraineeActivities(skippedSince: Date): Promise<TraineeActivity[]>;
 }

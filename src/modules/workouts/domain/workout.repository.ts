@@ -115,6 +115,9 @@ export interface WorkoutRepository {
     dayOfWeek: number,
   ): Promise<WorkoutWithExercises | null>;
 
+  /** Treino específico, só se estiver direcionado ao usuário — tela "escolher treino". */
+  findAssignedById(userId: string, workoutId: string): Promise<WorkoutWithExercises | null>;
+
   /** Qualquer treino ATIVO direcionado ao usuário (mais recente) — fallback. */
   findFirstAssignedActive(userId: string): Promise<WorkoutWithExercises | null>;
 

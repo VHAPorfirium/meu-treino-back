@@ -12,11 +12,13 @@ import {
 const FULL_INCLUDE = {
   exercises: { include: { exercise: true }, orderBy: { order: 'asc' as const } },
   assignments: { include: { user: { select: { id: true, name: true } } } },
+  program: { select: { id: true, name: true, type: true } }, // programa ao qual pertence
 };
 
 /** mesmo include, sem os destinatários — usado quando `WorkoutAssignment` não existe. */
 const INCLUDE_SEM_ASSIGNMENTS = {
   exercises: { include: { exercise: true }, orderBy: { order: 'asc' as const } },
+  program: { select: { id: true, name: true, type: true } },
 };
 
 /**
@@ -309,6 +311,18 @@ export class PrismaWorkoutRepository implements WorkoutRepository {
           where: { active: true, dayOfWeek, assignments: { some: { userId } } },
           include: FULL_INCLUDE,
           orderBy: { createdAt: 'desc' },
+        }),
+      () => null,
+    );
+  }
+
+  findAssignedById(userId: string, workoutId: string): Promise<WorkoutWithExercises | null> {
+    return this.comAssignments(
+      'findAssignedById',
+      () =>
+        this.prisma.workout.findFirst({
+          where: { id: workoutId, assignments: { some: { userId } } },
+          include: FULL_INCLUDE,
         }),
       () => null,
     );

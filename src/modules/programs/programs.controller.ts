@@ -50,6 +50,21 @@ export class ProgramsController {
 
   // ── gestão (admin) ─────────────────────────────────────────────────────────
 
+  // GET /api/programs/users/:userId/current — programa atual de um aluno (perfil no painel)
+  @Roles(Role.ADMIN)
+  @Get('users/:userId/current')
+  async currentOfUser(@Param('userId') userId: string) {
+    const currentProgram = await this.getCurrentProgram.execute(userId);
+    return { currentProgram };
+  }
+
+  // GET /api/programs/users/:userId/achievements — medalhas de um aluno
+  @Roles(Role.ADMIN)
+  @Get('users/:userId/achievements')
+  achievementsOfUser(@Param('userId') userId: string) {
+    return this.listMyAchievements.execute(userId);
+  }
+
   @Roles(Role.ADMIN)
   @Get()
   list() {

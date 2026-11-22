@@ -18,6 +18,8 @@ import { SetAssigneesUseCase } from './application/use-cases/set-assignees.use-c
 import { ReorderExercisesUseCase } from './application/use-cases/reorder-exercises.use-case';
 import { DuplicateWorkoutUseCase } from './application/use-cases/duplicate-workout.use-case';
 import { ListMyWorkoutsUseCase } from './application/use-cases/list-my-workouts.use-case';
+import { GetWorkoutSessionUseCase } from './application/use-cases/get-workout-session.use-case';
+import { WorkoutSessionBuilder } from './application/services/workout-session-builder.service';
 
 @Module({
   imports: [UsersModule, PushModule],
@@ -38,6 +40,8 @@ import { ListMyWorkoutsUseCase } from './application/use-cases/list-my-workouts.
     ReorderExercisesUseCase,
     DuplicateWorkoutUseCase,
     ListMyWorkoutsUseCase,
+    GetWorkoutSessionUseCase,
+    WorkoutSessionBuilder,
   ],
   exports: [WORKOUT_REPOSITORY],
 })
