@@ -75,10 +75,14 @@ export interface WorkoutLogRepository {
 
   history(opts?: { limit?: number; offset?: number }): Promise<any[]>;
 
+  countHistory(): Promise<number>;
+
   historyByUser(
     userId: string,
     opts?: { limit?: number; offset?: number },
   ): Promise<any[]>;
+
+  countHistoryByUser(userId: string): Promise<number>;
 
   /** Exercícios prescritos de um treino (para "última vez" e sugestão de carga). */
   listPrescribedExercises(workoutId: string): Promise<PrescribedWorkoutExercise[]>;

@@ -41,8 +41,8 @@ export class LoginUseCase {
     // Login por PIN: a chave de brute-force é o IP (+ um teto global, ver LoginThrottleService).
     const key = this.throttle.key(ctx.ip);
 
-    // 1) já está bloqueado por brute-force (por IP ou globalmente)?
-    const status = this.throttle.status(key);
+    // 1) já está bloqueado ou sem orçamento restante (inclui tentativas em andamento)?
+    const status = this.throttle.acquireAttempt(key);
     if (status.locked) {
       this.security.event('auth.login.locked', {
         ip: ctx.ip,
@@ -58,8 +58,11 @@ export class LoginUseCase {
       );
     }
 
-    const fail = (reason: string) => {
-      const { attempts, lockedNow, scope } = this.throttle.recordFailure(key);
+    let settled = false;
+
+    const fail = (reason: string): never => {
+      settled = true;
+      const { attempts, lockedNow, scope } = this.throttle.completeFailure(key);
       this.security.event('auth.login.failure', {
         ip: ctx.ip,
         requestId: ctx.requestId,
@@ -79,39 +82,46 @@ export class LoginUseCase {
       throw new UnauthorizedException('Credenciais inválidas');
     };
 
-    // Procura o usuário cujo PIN bate. Percorre todos e valida o hash argon2.
-    // Volume é minúsculo (poucos usuários), então o custo é irrelevante.
-    const users = await this.users.findAll();
-    let matched: (typeof users)[number] | null = null;
-    for (const u of users) {
-      const ok = await argon2.verify(u.pinHash, dto.pin).catch(() => false);
-      if (ok) {
-        matched = u;
-        break;
+    try {
+      // Procura o usuário cujo PIN bate. Percorre todos e valida o hash argon2.
+      // Volume é minúsculo (poucos usuários), então o custo é irrelevante.
+      const users = await this.users.findAll();
+      let matched: (typeof users)[number] | null = null;
+      for (const u of users) {
+        const ok = await argon2.verify(u.pinHash, dto.pin).catch(() => false);
+        if (ok) {
+          matched = u;
+          break;
+        }
+      }
+      if (!matched) return fail('PIN incorreto');
+
+      // sucesso: libera a vaga e limpa o bucket do IP
+      settled = true;
+      this.throttle.completeSuccess(key);
+      const payload: JwtPayload = {
+        sub: matched.id,
+        role: matched.role,
+        name: matched.name,
+      };
+      const token = await this.jwt.signAsync(payload);
+
+      this.security.event('auth.login.success', {
+        ip: ctx.ip,
+        role: matched.role,
+        userId: matched.id,
+        requestId: ctx.requestId,
+        durationMs: Date.now() - startedAt,
+      });
+
+      return {
+        token,
+        user: { id: matched.id, name: matched.name, role: matched.role },
+      };
+    } finally {
+      if (!settled) {
+        this.throttle.releaseAttempt(key);
       }
     }
-    if (!matched) return fail('PIN incorreto');
-
-    // sucesso: limpa o bucket do IP e registra
-    this.throttle.reset(key);
-    const payload: JwtPayload = {
-      sub: matched.id,
-      role: matched.role,
-      name: matched.name,
-    };
-    const token = await this.jwt.signAsync(payload);
-
-    this.security.event('auth.login.success', {
-      ip: ctx.ip,
-      role: matched.role,
-      userId: matched.id,
-      requestId: ctx.requestId,
-      durationMs: Date.now() - startedAt,
-    });
-
-    return {
-      token,
-      user: { id: matched.id, name: matched.name, role: matched.role },
-    };
   }
 }

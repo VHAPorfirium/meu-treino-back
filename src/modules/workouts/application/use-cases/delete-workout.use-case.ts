@@ -29,7 +29,20 @@ export class DeleteWorkoutUseCase {
       );
     }
 
-    await this.repo.delete(id);
+    try {
+      await this.repo.delete(id);
+    } catch (err) {
+      const code = (err as { code?: unknown } | null)?.code;
+      if (code === 'P2003') {
+        throw new ConflictException(
+          'Este treino tem sessões registradas. Desative-o em vez de excluir.',
+        );
+      }
+      if (code === 'P2025') {
+        throw new NotFoundException('Treino não encontrado');
+      }
+      throw err;
+    }
     return { ok: true };
   }
 }

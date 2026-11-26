@@ -38,7 +38,7 @@ async function bootstrap() {
   app.enableCors({
     origin: corsOrigins.length > 0 ? corsOrigins : 'http://localhost:3001',
     credentials: true,
-    exposedHeaders: ['x-request-id'],
+    exposedHeaders: ['x-request-id', 'x-total-count'],
   });
 
   app.useGlobalPipes(
@@ -48,6 +48,10 @@ async function bootstrap() {
       forbidNonWhitelisted: true,
     }),
   );
+
+  // Registra handlers de SIGTERM/SIGINT (essencial quando `exec node` roda como
+  // PID 1 no Docker) para drenar requisições e executar PrismaService.onModuleDestroy.
+  app.enableShutdownHooks();
 
   const port = Number(process.env.PORT ?? 3000);
   await app.listen(port, '0.0.0.0');

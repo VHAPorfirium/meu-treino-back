@@ -130,6 +130,10 @@ export class PrismaWorkoutLogRepository implements WorkoutLogRepository {
     });
   }
 
+  countHistoryByUser(userId: string): Promise<number> {
+    return this.prisma.workoutLog.count({ where: { userId } });
+  }
+
   history(opts?: { limit?: number; offset?: number }): Promise<any[]> {
     return this.prisma.workoutLog.findMany({
       orderBy: { date: 'desc' },
@@ -137,6 +141,10 @@ export class PrismaWorkoutLogRepository implements WorkoutLogRepository {
       skip: Math.max(0, Math.trunc(opts?.offset ?? 0)),
       include: HISTORY_INCLUDE,
     });
+  }
+
+  countHistory(): Promise<number> {
+    return this.prisma.workoutLog.count();
   }
 
   findAssignedWorkout(

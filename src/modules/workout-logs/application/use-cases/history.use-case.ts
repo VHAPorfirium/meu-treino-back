@@ -11,7 +11,14 @@ export class HistoryUseCase {
     private readonly repo: WorkoutLogRepository,
   ) {}
 
-  execute(opts?: { limit?: number; offset?: number }) {
-    return this.repo.history(opts);
+  async execute(opts?: { limit?: number; offset?: number }): Promise<{
+    items: any[];
+    total: number;
+  }> {
+    const [items, total] = await Promise.all([
+      this.repo.history(opts),
+      this.repo.countHistory(),
+    ]);
+    return { items, total };
   }
 }

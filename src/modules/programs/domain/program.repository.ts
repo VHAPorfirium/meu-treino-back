@@ -77,8 +77,13 @@ export interface ProgramRepository {
 
   listCompletedAssignmentsByUser(userId: string): Promise<AssignmentWithProgram[]>;
 
-  /** Cria as participações e direciona os treinos do programa aos alunos, numa transação. */
-  assignProgramToUsers(programId: string, userIds: string[], startDayKey: string): Promise<void>;
+  /**
+   * Arquiva participações atuais (ACTIVE/COMPLETED) de outros programas — ou de rodadas
+   * já concluídas do mesmo programa — cria as novas participações e direciona os treinos
+   * aos alunos em uma ÚNICA transação atômica com lock por aluno.
+   * Retorna os IDs dos alunos efetivamente incluídos (ignora quem já estava ACTIVE neste programa).
+   */
+  assignProgramToUsers(programId: string, userIds: string[], startDayKey: string): Promise<string[]>;
 
   /** Arquiva a participação e retira do aluno os treinos daquele programa, numa transação. */
   archiveAssignment(assignmentId: string): Promise<void>;

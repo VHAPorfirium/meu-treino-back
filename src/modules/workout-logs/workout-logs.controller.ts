@@ -6,7 +6,9 @@ import {
   Patch,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { Role } from '@prisma/client';
 import { Roles } from '../../shared/auth/roles.decorator';
 import { CurrentUser } from '../../shared/auth/current-user.decorator';
@@ -89,18 +91,29 @@ export class WorkoutLogsController {
     return this.listAttentionItems.execute();
   }
 
-  // GET /api/workout-logs/history?limit=&offset=  (ADMIN)
+  // GET /api/workout-logs/history?limit=&offset=  (ADMIN) — retorna array + header X-Total-Count
   @Roles(Role.ADMIN)
   @Get('history')
-  getHistory(@Query() query: HistoryQueryDto) {
-    return this.history.execute(query);
+  async getHistory(
+    @Query() query: HistoryQueryDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { items, total } = await this.history.execute(query);
+    res.setHeader('X-Total-Count', String(total));
+    return items;
   }
 
-  // GET /api/workout-logs/my-history?limit=&offset=  (TRAINEE) — histórico da própria aluna
+  // GET /api/workout-logs/my-history?limit=&offset=  (TRAINEE) — histórico da própria aluna + X-Total-Count
   @Roles(Role.TRAINEE, Role.ADMIN)
   @Get('my-history')
-  getMyHistory(@CurrentUser() user: AuthUser, @Query() query: HistoryQueryDto) {
-    return this.myHistory.execute(user.userId, query);
+  async getMyHistory(
+    @CurrentUser() user: AuthUser,
+    @Query() query: HistoryQueryDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { items, total } = await this.myHistory.execute(user.userId, query);
+    res.setHeader('X-Total-Count', String(total));
+    return items;
   }
 
   // GET /api/workout-logs/progress-summary?userId=  (ADMIN)

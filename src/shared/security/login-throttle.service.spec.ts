@@ -55,4 +55,44 @@ describe('LoginThrottleService', () => {
     // 10.0.0.1 e 10.0.0.2 expiraram e foram podados; restam apenas 10.0.0.3 e global
     expect(svc.size()).toBe(2);
   });
+
+  it('bloqueia a 6ª tentativa concorrente do mesmo IP antes do término das 5 em andamento (TOCTOU)', () => {
+    const svc = new LoginThrottleService();
+    const key = svc.key('203.0.113.55');
+
+    for (let i = 0; i < 5; i++) {
+      expect(svc.acquireAttempt(key).locked).toBe(false);
+    }
+
+    const sixth = svc.acquireAttempt(key);
+    expect(sixth).toMatchObject({ locked: true, scope: 'ip', attempts: 5 });
+
+    // Se uma falhar inesperadamente (ex.: erro de banco), libera vaga sem contar falha
+    svc.releaseAttempt(key);
+    expect(svc.acquireAttempt(key).locked).toBe(false);
+  });
+
+  it('bloqueia a 31ª tentativa concorrente distribuída pelo teto global antes de concluir argon2', () => {
+    const svc = new LoginThrottleService();
+
+    for (let i = 1; i <= 30; i++) {
+      expect(svc.acquireAttempt(svc.key(`198.51.100.${i}`)).locked).toBe(false);
+    }
+
+    const overflow = svc.acquireAttempt(svc.key('192.0.2.77'));
+    expect(overflow).toMatchObject({ locked: true, scope: 'global', attempts: 30 });
+  });
+
+  it('mantém contagem inFlight consistente quando uma tentativa tem sucesso enquanto outra ainda roda', () => {
+    const svc = new LoginThrottleService();
+    const key = svc.key('203.0.113.88');
+
+    expect(svc.acquireAttempt(key).locked).toBe(false);
+    expect(svc.acquireAttempt(key).locked).toBe(false);
+
+    svc.completeSuccess(key);
+    // A 2ª tentativa ainda está em voo, então falhar agora contabiliza apenas 1 falha
+    expect(svc.completeFailure(key)).toEqual({ attempts: 1, lockedNow: false });
+    expect(svc.status(key)).toMatchObject({ locked: false, attempts: 1 });
+  });
 });

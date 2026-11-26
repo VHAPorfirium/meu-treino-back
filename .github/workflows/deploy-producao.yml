@@ -12,17 +12,17 @@ name: Testar e publicar em produção
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch: # botão "Run workflow" para publicar manualmente
-
-# dois pushes seguidos não fazem dois deploys ao mesmo tempo: o segundo espera o primeiro
-concurrency:
-  group: deploy-producao
-  cancel-in-progress: false
 
 jobs:
   testar:
     name: Testes e compilação
     runs-on: ubuntu-latest
+    concurrency:
+      group: testar-${{ github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -41,8 +41,13 @@ jobs:
   publicar:
     name: Publicar na VPS
     needs: testar # só publica se os testes passarem
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment: production
+    # dois pushes seguidos não fazem dois deploys ao mesmo tempo: o segundo espera o primeiro
+    concurrency:
+      group: deploy-producao
+      cancel-in-progress: false
     steps:
       - name: Rodar o deploy na VPS
         uses: appleboy/ssh-action@v1.2.0

@@ -28,7 +28,20 @@ export class RemoveWorkoutExerciseUseCase {
       );
     }
 
-    await this.repo.removeExerciseAndReindex(workoutId, workoutExerciseId);
+    try {
+      await this.repo.removeExerciseAndReindex(workoutId, workoutExerciseId);
+    } catch (err) {
+      const code = (err as { code?: unknown } | null)?.code;
+      if (code === 'P2003') {
+        throw new ConflictException(
+          'Este exercício já foi executado em sessões registradas e não pode ser removido do treino.',
+        );
+      }
+      if (code === 'P2025') {
+        throw new NotFoundException('Exercício não encontrado neste treino');
+      }
+      throw err;
+    }
     return { ok: true };
   }
 }
