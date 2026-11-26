@@ -6,9 +6,9 @@ groups:
     folder: Ritmo
     interval: 30s
     rules:
-      # ── Brute-force por IP: > 5 falhas de login do mesmo IP em 1 min ────────────
-      # Espelha a regra do backend (LoginThrottleService) — o alerta acende junto
-      # com o evento `auth.login.locked`: detecção externa confirmando a defesa interna.
+      # ── Brute-force por IP: >= 5 falhas de login do mesmo IP em 1 min ───────────
+      # Espelha a regra do backend (LoginThrottleService trava na 5ª falha e passa
+      # a emitir `auth.login.locked` — portanto o limiar precisa ser > 4, ou seja, >= 5).
       - uid: ritmo-bruteforce-ip
         title: Brute-force de login (por IP)
         condition: C
@@ -43,9 +43,9 @@ groups:
               type: threshold
               expression: B
               conditions:
-                - evaluator: { type: gt, params: [5] }
+                - evaluator: { type: gt, params: [4] }
 
-      # ── Teto global: muitas falhas somando todos os IPs (IP forjado / distribuído) ─
+      # ── Teto global: >= 30 falhas somando todos os IPs (IP forjado / distribuído) ─
       - uid: ritmo-bruteforce-global
         title: Brute-force de login (global)
         condition: C
@@ -79,4 +79,4 @@ groups:
               type: threshold
               expression: B
               conditions:
-                - evaluator: { type: gt, params: [30] }
+                - evaluator: { type: gt, params: [29] }

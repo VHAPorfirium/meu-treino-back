@@ -13,11 +13,15 @@ async function bootstrap() {
 
   /**
    * Proxies confiáveis à frente da API (define como `req.ip` é resolvido a partir
-   * de X-Forwarded-For). Local ou Nginx/Caddy na VPS = 1 (o proxy reverso da VPS).
-   * Produção via proxy do Next na Vercel + Nginx = 2.
+   * de X-Forwarded-For). Local direto = 0; Nginx/Caddy na VPS = 1;
+   * produção via proxy do Next na Vercel + Nginx = 2.
    * Sem isso, um X-Forwarded-For forjado pelo cliente burlava o lockout por IP.
    */
-  app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS ?? 1));
+  const rawTrustProxy = process.env.TRUST_PROXY_HOPS?.trim();
+  const parsedHops = rawTrustProxy ? Number.parseInt(rawTrustProxy, 10) : 1;
+  const trustProxyHops =
+    Number.isInteger(parsedHops) && parsedHops >= 0 ? parsedHops : 1;
+  app.set('trust proxy', trustProxyHops);
 
   // request-id em toda requisição (correlação erro ↔ evento de segurança)
   app.use(requestIdMiddleware);
@@ -27,8 +31,12 @@ async function bootstrap() {
   app.use(cookieParser());
 
   // CORS com credenciais (necessário p/ cookie httpOnly). Origem explícita.
+  const corsOrigins = (process.env.CORS_ORIGIN ?? 'http://localhost:3001')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
   app.enableCors({
-    origin: process.env.CORS_ORIGIN?.split(',') ?? 'http://localhost:3001',
+    origin: corsOrigins.length > 0 ? corsOrigins : 'http://localhost:3001',
     credentials: true,
     exposedHeaders: ['x-request-id'],
   });

@@ -53,4 +53,4 @@ EXPOSE 3000
 # `migrate deploy` é idempotente e NÃO destrói dados.
 # Caminho local em vez de `npx`: se o CLI não estiver na imagem, quebra na hora
 # e aparece no log, em vez de o `npx` tentar baixar da rede.
-CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy && node dist/main.js"]
+CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy && exec node dist/main.js"]

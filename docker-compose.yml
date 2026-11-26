@@ -34,8 +34,8 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001}
       # local via http -> false; produção via https -> true
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
-      # local: 1 proxy (nenhum, na prática) — em produção via Vercel: 2
-      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
+      # local direto (sem proxy) = 0; Nginx na VPS = 1; Vercel + Nginx = 2
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-0}
       # push/fotos (E6) — opcionais em dev
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
