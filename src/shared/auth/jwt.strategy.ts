@@ -1,9 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import type { Request } from 'express';
 import { AuthUser, JwtPayload } from './jwt-payload';
 import { getJwtSecret } from './jwt-secret';
+import { UserStatusCacheService } from './user-status-cache.service';
 
 export const AUTH_COOKIE = 'mt_token';
 
@@ -14,7 +15,7 @@ function fromCookie(req: Request): string | null {
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor() {
+  constructor(private readonly userStatus: UserStatusCacheService) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
         fromCookie,
@@ -26,6 +27,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload): Promise<AuthUser> {
-    return { userId: payload.sub, role: payload.role, name: payload.name };
+    const status = await this.userStatus.get(payload.sub);
+    if (!status || !status.active) {
+      throw new UnauthorizedException('Conta desativada');
+    }
+    return {
+      userId: status.id,
+      role: status.role,
+      name: status.name,
+      username: status.username,
+      mustChangePassword: status.mustChangePassword,
+    };
   }
 }

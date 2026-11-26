@@ -55,8 +55,9 @@ export class LoginThrottleService {
   private readonly PRUNE_INTERVAL_MS = 60_000;
   private readonly MAX_TRACKED_KEYS = 10_000;
 
-  key(ip: string): string {
-    return `login::${ip}`;
+  key(ip: string, identifier?: string): string {
+    const normalized = identifier?.trim().toLowerCase();
+    return normalized ? `login::${ip}::${normalized}` : `login::${ip}`;
   }
 
   /** Quantidade atual de buckets rastreados (útil para diagnóstico/testes). */
