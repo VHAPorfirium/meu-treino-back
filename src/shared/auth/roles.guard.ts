@@ -10,7 +10,7 @@ import type { Request } from 'express';
 import { ROLES_KEY } from './roles.decorator';
 import { AuthUser } from './jwt-payload';
 import { SecurityLogger } from '../security/security-logger';
-import { clientIp, requestId } from '../http/client-ip';
+import { clientIp, requestId, userAgent } from '../http/client-ip';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -32,12 +32,15 @@ export class RolesGuard implements CanActivate {
       // 403: autenticado (ou não), mas sem o papel exigido → evento `authz.denied`
       this.security.event('authz.denied', {
         ip: clientIp(req),
+        userAgent: userAgent(req),
         requestId: requestId(req),
         userId: user?.userId,
         role: user?.role,
         requiredRoles,
         method: req.method,
         path: req.originalUrl?.split('?')[0] ?? req.url,
+        statusCode: 403,
+        reason: 'forbidden_role',
       });
       throw new ForbiddenException(
         'Acesso restrito ao papel: ' + requiredRoles.join(', '),

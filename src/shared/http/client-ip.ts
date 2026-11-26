@@ -19,3 +19,13 @@ export function clientIp(req: Request): string {
 export function requestId(req: Request): string | undefined {
   return (req as Request & { id?: string }).id;
 }
+
+/** User-Agent truncado (máx. 256 chars) para não inflar registros de auditoria. */
+export function userAgent(req: Request): string | undefined {
+  const raw = req.headers?.['user-agent'];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, 256) : undefined;
+}
+
