@@ -1,6 +1,6 @@
 {
   "name": "meu-treino-back",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "API do app de treino (NestJS + Prisma, Clean Architecture)",
   "author": "Victor Hugo",
   "private": true,
@@ -17,6 +17,7 @@
     "seed": "ts-node --transpile-only prisma/seed.ts",
     "seed:users": "ts-node --transpile-only prisma/seed-users.ts",
     "db:reset": "prisma migrate reset --force",
+    "db:smoke": "ts-node --transpile-only prisma/smoke-check.ts",
     "test": "jest",
     "test:watch": "jest --watch",
     "seed:traducoes": "ts-node --transpile-only prisma/seed-traducoes.ts"

@@ -18,11 +18,28 @@ on:
 
 jobs:
   testar:
-    name: Testes e compilação
+    name: Testes, migrations e compilação
     runs-on: ubuntu-latest
     concurrency:
       group: testar-${{ github.ref }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: treino
+          POSTGRES_PASSWORD: treino_ci_password
+          POSTGRES_DB: meu_treino_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U treino -d meu_treino_ci"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgresql://treino:treino_ci_password@localhost:5432/meu_treino_ci?schema=public
+      DIRECT_URL: postgresql://treino:treino_ci_password@localhost:5432/meu_treino_ci?schema=public
     steps:
       - uses: actions/checkout@v4
 
@@ -32,10 +49,23 @@ jobs:
           cache: npm
 
       - run: npm ci
-      - run: npx prisma generate
-      - name: Compilar (TypeScript)
-        run: npx tsc --noEmit -p tsconfig.json
-      - name: Testes
+      - name: Validar schema e gerar Prisma Client
+        run: |
+          npx prisma validate
+          npx prisma generate
+      - name: Validar migrations do zero, idempotência e zero drift (Postgres 16)
+        run: |
+          npx prisma migrate deploy
+          npx prisma migrate deploy
+          npx prisma migrate status
+          npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
+      - name: Smoke check do schema no PostgreSQL
+        run: npm run db:smoke
+      - name: Compilar (TypeScript + Nest)
+        run: |
+          npx tsc --noEmit -p tsconfig.json
+          npm run build
+      - name: Testes unitários
         run: npm test -- --ci
 
   publicar:
