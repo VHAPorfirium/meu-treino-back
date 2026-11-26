@@ -38,7 +38,7 @@ function makeUser(overrides: Partial<User> = {}): User {
   };
 }
 
-describe('LoginUseCase — CPF O(1), fallback legado, anti-timing e lockout', () => {
+describe('LoginUseCase — CPF O(1), perfil duplo (PERSONAL+TRAINEE), fallback legado, anti-timing e lockout', () => {
   const crypto = new CryptoService();
 
   afterEach(() => {
@@ -50,6 +50,7 @@ describe('LoginUseCase — CPF O(1), fallback legado, anti-timing e lockout', ()
       findAll: jest.fn(),
       findById: jest.fn(),
       findByCpfHash: jest.fn().mockResolvedValue(null),
+      findManyByCpfHash: jest.fn().mockResolvedValue([]),
       findByUsername: jest.fn().mockResolvedValue(null),
       create: jest.fn(),
       update: jest.fn().mockResolvedValue(makeUser()),
@@ -80,7 +81,7 @@ describe('LoginUseCase — CPF O(1), fallback legado, anti-timing e lockout', ()
     const user = makeUser({ pinHash, cpfHash });
 
     const { useCase, users, security } = createDeps({
-      findByCpfHash: jest.fn().mockResolvedValue(user),
+      findManyByCpfHash: jest.fn().mockResolvedValue([user]),
     });
 
     const result = await useCase.execute(
@@ -89,7 +90,7 @@ describe('LoginUseCase — CPF O(1), fallback legado, anti-timing e lockout', ()
     );
 
     expect(users.findAll).not.toHaveBeenCalled();
-    expect(users.findByCpfHash).toHaveBeenCalledWith(cpfHash);
+    expect(users.findManyByCpfHash).toHaveBeenCalledWith(cpfHash);
     expect(result).toEqual({
       token: 'tok-jwt',
       user: {
@@ -108,6 +109,99 @@ describe('LoginUseCase — CPF O(1), fallback legado, anti-timing e lockout', ()
         statusCode: 200,
       }),
     );
+  });
+
+  it('retorna requiresProfileSelection quando mesmo CPF tem PERSONAL e TRAINEE ativos com a mesma senha, e conclui ao informar role', async () => {
+    const sharedHash = await argon2.hash('MesmaSenha@1', { type: argon2.argon2id });
+    const cpfHash = crypto.hashCpf(VALID_CPF_1);
+    const personal = makeUser({
+      id: 'u-pers',
+      name: 'Victor Personal',
+      username: 'victor.personal',
+      role: Role.PERSONAL,
+      cpfHash,
+      pinHash: sharedHash,
+    });
+    const trainee = makeUser({
+      id: 'u-trainee',
+      name: 'Victor Hugo',
+      username: 'victor.hugo',
+      role: Role.TRAINEE,
+      cpfHash,
+      pinHash: sharedHash,
+    });
+
+    const { useCase } = createDeps({
+      findManyByCpfHash: jest.fn().mockResolvedValue([personal, trainee]),
+    });
+
+    // Senha errada continua 401 sem vazar perfis
+    await expect(
+      useCase.execute(
+        { identifier: VALID_CPF_1, password: 'Errada@1' },
+        { ip: '203.0.113.15' },
+      ),
+    ).rejects.toThrow(UnauthorizedException);
+
+    // Senha correta sem role -> pede seleção de perfil
+    const choice = await useCase.execute(
+      { identifier: VALID_CPF_1, password: 'MesmaSenha@1' },
+      { ip: '203.0.113.15' },
+    );
+    expect(choice).toEqual({
+      requiresProfileSelection: true,
+      profiles: [
+        { role: Role.PERSONAL, name: 'Victor Personal', username: 'victor.personal' },
+        { role: Role.TRAINEE, name: 'Victor Hugo', username: 'victor.hugo' },
+      ],
+    });
+
+    // Com role escolhido -> autentica diretamente no perfil selecionado
+    const logged = await useCase.execute(
+      { identifier: VALID_CPF_1, password: 'MesmaSenha@1', role: Role.PERSONAL },
+      { ip: '203.0.113.15' },
+    );
+    expect(logged.requiresProfileSelection).toBeFalsy();
+    if (!logged.requiresProfileSelection) {
+      expect(logged.user).toMatchObject({
+        id: 'u-pers',
+        role: Role.PERSONAL,
+        username: 'victor.personal',
+      });
+    }
+  });
+
+  it('entra direto no único perfil cuja senha confere quando mesmo CPF tem senhas diferentes', async () => {
+    const hashPersonal = await argon2.hash('SenhaPersonal@1', { type: argon2.argon2id });
+    const hashTrainee = await argon2.hash('SenhaAluno@1', { type: argon2.argon2id });
+    const cpfHash = crypto.hashCpf(VALID_CPF_1);
+    const personal = makeUser({
+      id: 'u-pers',
+      username: 'victor.personal',
+      role: Role.PERSONAL,
+      cpfHash,
+      pinHash: hashPersonal,
+    });
+    const trainee = makeUser({
+      id: 'u-trainee',
+      username: 'victor.hugo',
+      role: Role.TRAINEE,
+      cpfHash,
+      pinHash: hashTrainee,
+    });
+
+    const { useCase } = createDeps({
+      findManyByCpfHash: jest.fn().mockResolvedValue([personal, trainee]),
+    });
+
+    const res = await useCase.execute(
+      { identifier: VALID_CPF_1, password: 'SenhaAluno@1' },
+      { ip: '203.0.113.16' },
+    );
+    expect(res.requiresProfileSelection).toBeFalsy();
+    if (!res.requiresProfileSelection) {
+      expect(res.user.id).toBe('u-trainee');
+    }
   });
 
   it('permite fallback por username legado apenas quando cpfHash é null e força troca de PIN fraco', async () => {
@@ -134,7 +228,9 @@ describe('LoginUseCase — CPF O(1), fallback legado, anti-timing e lockout', ()
       mustChangePassword: true,
     });
     expect(userStatusCache.invalidate).toHaveBeenCalledWith('u-legacy');
-    expect(result.user.mustChangePassword).toBe(true);
+    if (!result.requiresProfileSelection) {
+      expect(result.user.mustChangePassword).toBe(true);
+    }
   });
 
   it('bloqueia login por username para contas que já possuem CPF cadastrado', async () => {
@@ -178,10 +274,9 @@ describe('LoginUseCase — CPF O(1), fallback legado, anti-timing e lockout', ()
       active: false,
     });
     const { useCase, security } = createDeps({
-      findByCpfHash: jest.fn().mockResolvedValue(inactiveUser),
+      findManyByCpfHash: jest.fn().mockResolvedValue([inactiveUser]),
     });
 
-    // Senha errada -> erro genérico (não vaza status)
     await expect(
       useCase.execute(
         { identifier: VALID_CPF_1, password: 'Errada@1' },
@@ -189,7 +284,6 @@ describe('LoginUseCase — CPF O(1), fallback legado, anti-timing e lockout', ()
       ),
     ).rejects.toThrow('Credenciais inválidas');
 
-    // Senha certa -> informa conta desativada
     await expect(
       useCase.execute(
         { identifier: VALID_CPF_1, password: 'SenhaForte@1' },
@@ -209,38 +303,38 @@ describe('LoginUseCase — CPF O(1), fallback legado, anti-timing e lockout', ()
     const user2 = makeUser({ id: 'u2', username: 'outro', cpfHash: hash2, pinHash: pinHash2 });
 
     const { useCase } = createDeps({
-      findByCpfHash: jest.fn().mockImplementation(async (h) => (h === hash2 ? user2 : null)),
+      findManyByCpfHash: jest.fn().mockImplementation(async (h) => (h === hash2 ? [user2] : [])),
     });
 
-    // 5 falhas no CPF 1 do mesmo IP -> bloqueia CPF 1
     for (let i = 0; i < 5; i++) {
       await expect(
         useCase.execute({ identifier: VALID_CPF_1, password: 'Errada@1' }, { ip: '198.51.100.1' }),
       ).rejects.toThrow(UnauthorizedException);
     }
 
-    // 6ª tentativa no CPF 1 -> 429
     await expect(
       useCase.execute({ identifier: VALID_CPF_1, password: 'Errada@1' }, { ip: '198.51.100.1' }),
     ).rejects.toMatchObject({ status: HttpStatus.TOO_MANY_REQUESTS });
 
-    // CPF 2 no mesmo IP continua entrando normalmente!
     const ok = await useCase.execute(
       { identifier: VALID_CPF_2, password: 'SenhaForte@2' },
       { ip: '198.51.100.1' },
     );
-    expect(ok.user.id).toBe('u2');
+    expect(ok.requiresProfileSelection).toBeFalsy();
+    if (!ok.requiresProfileSelection) {
+      expect(ok.user.id).toBe('u2');
+    }
   });
 
   it('limita rajada paralela de 10 requisições no mesmo (IP + CPF) a 5 verificações (TOCTOU)', async () => {
     const pinHash = await argon2.hash('SenhaForte@1', { type: argon2.argon2id });
     const cpfHash = crypto.hashCpf(VALID_CPF_1);
-    const findByCpfHash = jest.fn().mockImplementation(async () => {
+    const findManyByCpfHash = jest.fn().mockImplementation(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
-      return makeUser({ cpfHash, pinHash });
+      return [makeUser({ cpfHash, pinHash })];
     });
 
-    const { useCase } = createDeps({ findByCpfHash });
+    const { useCase } = createDeps({ findManyByCpfHash });
 
     const results = await Promise.allSettled(
       Array.from({ length: 10 }, () =>
@@ -261,14 +355,14 @@ describe('LoginUseCase — CPF O(1), fallback legado, anti-timing e lockout', ()
         r.reason.getStatus() === HttpStatus.TOO_MANY_REQUESTS,
     );
 
-    expect(findByCpfHash).toHaveBeenCalledTimes(5);
+    expect(findManyByCpfHash).toHaveBeenCalledTimes(5);
     expect(unauthorized).toHaveLength(5);
     expect(tooMany).toHaveLength(5);
   });
 
   it('libera a vaga reservada se o repositório falhar com erro inesperado', async () => {
     const { useCase, throttle } = createDeps({
-      findByCpfHash: jest.fn().mockRejectedValue(new Error('db offline')),
+      findManyByCpfHash: jest.fn().mockRejectedValue(new Error('db offline')),
     });
 
     await expect(

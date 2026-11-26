@@ -1,4 +1,5 @@
-import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import { Role } from '@prisma/client';
+import { IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class LoginDto {
   /**
@@ -18,4 +19,12 @@ export class LoginDto {
   @IsNotEmpty({ message: 'Informe sua senha' })
   @MaxLength(128, { message: 'Senha inválida' })
   password: string;
+
+  /**
+   * Perfil escolhido quando o mesmo CPF possui mais de uma conta ativa com a mesma senha
+   * (ex.: pessoa que é `PERSONAL` e também `TRAINEE` na academia).
+   */
+  @IsOptional()
+  @IsEnum(Role, { message: 'Perfil inválido' })
+  role?: Role;
 }

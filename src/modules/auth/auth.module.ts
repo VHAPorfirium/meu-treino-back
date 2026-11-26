@@ -6,6 +6,7 @@ import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { LoginUseCase } from './application/use-cases/login.use-case';
 import { ChangePasswordUseCase } from './application/use-cases/change-password.use-case';
+import { SwitchProfileUseCase } from './application/use-cases/switch-profile.use-case';
 import { JwtStrategy } from '../../shared/auth/jwt.strategy';
 import { getJwtSecret } from '../../shared/auth/jwt-secret';
 
@@ -26,6 +27,6 @@ import { getJwtSecret } from '../../shared/auth/jwt-secret';
     }),
   ],
   controllers: [AuthController],
-  providers: [LoginUseCase, ChangePasswordUseCase, JwtStrategy],
+  providers: [LoginUseCase, ChangePasswordUseCase, SwitchProfileUseCase, JwtStrategy],
 })
 export class AuthModule {}

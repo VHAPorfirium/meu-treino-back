@@ -17,8 +17,10 @@ import { SecurityLogger } from '../../shared/security/security-logger';
 import { clientIp, requestId, userAgent } from '../../shared/http/client-ip';
 import { LoginDto } from './application/dto/login.dto';
 import { ChangePasswordDto } from './application/dto/change-password.dto';
+import { SwitchProfileDto } from './application/dto/switch-profile.dto';
 import { LoginUseCase } from './application/use-cases/login.use-case';
 import { ChangePasswordUseCase } from './application/use-cases/change-password.use-case';
+import { SwitchProfileUseCase } from './application/use-cases/switch-profile.use-case';
 
 const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
 
@@ -43,10 +45,11 @@ export class AuthController {
   constructor(
     private readonly login: LoginUseCase,
     private readonly changePasswordUseCase: ChangePasswordUseCase,
+    private readonly switchProfileUseCase: SwitchProfileUseCase,
     private readonly security: SecurityLogger,
   ) {}
 
-  // POST /api/auth/login { identifier, password } — login O(1) por CPF (ou apelido legado sem CPF)
+  // POST /api/auth/login { identifier, password, role? } — login O(1) por CPF (ou apelido legado sem CPF)
   // Rate limit estrito: 10 tentativas/min por IP (além do lockout de brute-force)
   @Public()
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
@@ -58,6 +61,39 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.login.execute(dto, {
+      ip: clientIp(req),
+      userAgent: userAgent(req),
+      requestId: requestId(req),
+    });
+
+    if (result.requiresProfileSelection) {
+      return result;
+    }
+
+    res.cookie(AUTH_COOKIE, result.token, {
+      ...authCookieOptions(),
+      maxAge: THIRTY_DAYS,
+    });
+
+    return { user: result.user };
+  }
+
+  // GET /api/auth/linked-profiles — lista outros perfis ativos no mesmo CPF (ex.: PERSONAL <-> TRAINEE)
+  @Get('linked-profiles')
+  linkedProfiles(@CurrentUser() user: AuthUser) {
+    return this.switchProfileUseCase.listLinkedProfiles(user.userId);
+  }
+
+  // POST /api/auth/switch-profile { role } — troca de perfil ativo mantendo o mesmo CPF
+  @Post('switch-profile')
+  @HttpCode(200)
+  async switchProfile(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: SwitchProfileDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.switchProfileUseCase.execute(user.userId, dto.role, {
       ip: clientIp(req),
       userAgent: userAgent(req),
       requestId: requestId(req),
