@@ -23,6 +23,7 @@ import { NotesModule } from './modules/notes/notes.module';
 import { ProgressPhotosModule } from './modules/progress-photos/progress-photos.module';
 import { PushModule } from './modules/push/push.module';
 import { ProgramsModule } from './modules/programs/programs.module';
+import { LinksModule } from './modules/links/links.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { ProgramsModule } from './modules/programs/programs.module';
     HealthModule,
     AuthModule,
     UsersModule,
+    LinksModule,
     ExercisesModule,
     MuscleGroupsModule,
     WorkoutsModule,
