@@ -35,9 +35,12 @@ const EXPECTED_TABLES = [
   'TrainingProgram',
   'ProgramAssignment',
   'FavoriteExercise',
+  'AccessLog',
 ] as const;
 
 const EXPECTED_INDEXES = [
+  'User_username_key',
+  'User_cpfHash_key',
   'Exercise_namePt_idx',
   'ProgressPhoto_path_key',
   'WorkoutLog_userId_workoutId_dayKey_key',
@@ -93,10 +96,38 @@ async function main() {
       await prisma.$transaction(async (tx) => {
         const suffix = `smoke-${Date.now()}`;
         const admin = await tx.user.create({
-          data: { name: `Admin ${suffix}`, role: Role.ADMIN, pinHash: 'hash-admin' },
+          data: {
+            name: `Admin ${suffix}`,
+            username: `admin.${suffix}`,
+            cpfHash: `cpf-admin-${suffix}`,
+            cpfEncrypted: 'v1:enc',
+            role: Role.ADMIN,
+            pinHash: 'hash-admin',
+            active: true,
+            mustChangePassword: false,
+          },
         });
         const trainee = await tx.user.create({
-          data: { name: `Aluna ${suffix}`, role: Role.TRAINEE, pinHash: 'hash-trainee' },
+          data: {
+            name: `Aluna ${suffix}`,
+            username: `aluna.${suffix}`,
+            cpfHash: `cpf-trainee-${suffix}`,
+            cpfEncrypted: 'v1:enc2',
+            role: Role.TRAINEE,
+            pinHash: 'hash-trainee',
+            active: true,
+            mustChangePassword: true,
+          },
+        });
+        await tx.accessLog.create({
+          data: {
+            event: 'auth.login.success',
+            userId: trainee.id,
+            actorUserId: admin.id,
+            identifierMasked: '***.982.247-**',
+            ip: '127.0.0.1',
+            statusCode: 200,
+          },
         });
 
         // Valida lock determinístico usado em PrismaProgramRepository.assignProgramToUsers

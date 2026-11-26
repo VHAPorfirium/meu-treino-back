@@ -12,6 +12,7 @@ import * as argon2 from 'argon2';
 
 export interface SeedUser {
   name: string;
+  username: string;
   role: Role;
   pin: string;
 }
@@ -29,40 +30,34 @@ function resolveSeedPin(envName: string, devFallback: string): string {
 
 export function resolveSeedUsers(): SeedUser[] {
   return [
-    { name: 'Admin', role: Role.ADMIN, pin: resolveSeedPin('ADMIN_PIN', '9841') },
-    { name: 'Victor Hugo', role: Role.TRAINEE, pin: resolveSeedPin('VICTOR_PIN', '5823') },
-    { name: 'Ninfa', role: Role.TRAINEE, pin: resolveSeedPin('NINFA_PIN', '7194') },
+    { name: 'Admin', username: 'admin', role: Role.ADMIN, pin: resolveSeedPin('ADMIN_PIN', '9841') },
+    { name: 'Victor Hugo', username: 'victor.hugo', role: Role.TRAINEE, pin: resolveSeedPin('VICTOR_PIN', '5823') },
+    { name: 'Ninfa', username: 'ninfa', role: Role.TRAINEE, pin: resolveSeedPin('NINFA_PIN', '7194') },
   ];
 }
 
 /**
- * Reconcilia os usuários base de forma NÃO-DESTRUTIVA (upsert por nome):
+ * Reconcilia os usuários base de forma NÃO-DESTRUTIVA (upsert por username):
  *  - preserva histórico e preserva alunos criados posteriormente pelo painel (`POST /api/users`).
  *  - só remove usuários extras se `SEED_PRUNE_USERS=true` for informado explicitamente.
  */
 export async function syncUsers(prisma: PrismaClient): Promise<void> {
   const users = resolveSeedUsers();
-  const pins = users.map((u) => u.pin);
-  if (new Set(pins).size !== pins.length) {
-    throw new Error(
-      'PINs duplicados — cada usuário precisa de um PIN único (login é por PIN).',
-    );
-  }
 
   for (const u of users) {
     const pinHash = await argon2.hash(u.pin);
     await prisma.user.upsert({
-      where: { name: u.name },
-      update: { role: u.role, pinHash },
-      create: { name: u.name, role: u.role, pinHash },
+      where: { username: u.username },
+      update: { name: u.name, role: u.role, pinHash },
+      create: { name: u.name, username: u.username, role: u.role, pinHash },
     });
-    console.log(`✓ ${u.name} (${u.role})`);
+    console.log(`✓ ${u.name} (@${u.username}, ${u.role})`);
   }
 
   if (process.env.SEED_PRUNE_USERS === 'true') {
-    const keep = users.map((u) => u.name);
+    const keep = users.map((u) => u.username);
     const extras = await prisma.user.findMany({
-      where: { name: { notIn: keep } },
+      where: { username: { notIn: keep } },
       select: { id: true, name: true },
     });
     if (extras.length) {

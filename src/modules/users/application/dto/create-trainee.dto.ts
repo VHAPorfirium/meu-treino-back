@@ -1,15 +1,36 @@
 import { Transform } from 'class-transformer';
-import { IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 export class CreateTraineeDto {
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
-  @MinLength(2)
-  @MaxLength(60)
+  @MinLength(2, { message: 'O nome deve ter pelo menos 2 caracteres' })
+  @MaxLength(60, { message: 'O nome deve ter no máximo 60 caracteres' })
   name: string;
 
-  /** Mesmo formato do login: 4 a 8 dígitos. */
+  /** CPF brasileiro (11 dígitos, com ou sem máscara). Validado módulo 11 no use-case. */
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
-  @Matches(/^\d{4,8}$/, { message: 'O PIN deve ter de 4 a 8 números' })
-  pin: string;
+  @IsNotEmpty({ message: 'Informe o CPF do aluno' })
+  @MaxLength(20)
+  cpf: string;
+
+  /** Senha inicial forte (8+ chars, letra, número e especial). Exigirá troca no 1º acesso. */
+  @IsString()
+  @IsNotEmpty({ message: 'Informe a senha inicial' })
+  @MaxLength(128)
+  password: string;
+
+  /** Apelido opcional (`primeiro.ultimo`). Se omitido, é gerado automaticamente sem colisões. */
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MaxLength(40)
+  username?: string;
 }

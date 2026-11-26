@@ -95,4 +95,17 @@ describe('LoginThrottleService', () => {
     expect(svc.completeFailure(key)).toEqual({ attempts: 1, lockedNow: false });
     expect(svc.status(key)).toMatchObject({ locked: false, attempts: 1 });
   });
+
+  it('isola buckets distintos para identificadores diferentes no mesmo IP', () => {
+    const svc = new LoginThrottleService();
+    const keyA = svc.key('198.51.100.10', 'cpf-hash-a');
+    const keyB = svc.key('198.51.100.10', 'cpf-hash-b');
+
+    for (let i = 0; i < 5; i++) {
+      svc.recordFailure(keyA);
+    }
+
+    expect(svc.status(keyA).locked).toBe(true);
+    expect(svc.status(keyB).locked).toBe(false);
+  });
 });

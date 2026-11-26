@@ -51,7 +51,13 @@ describe('WorkoutLogsController — X-Total-Count em history e my-history', () =
     const res = { setHeader } as unknown as Response;
 
     const result = await controller.getMyHistory(
-      { userId: 'u-aluna', role: Role.TRAINEE, name: 'Aluna' },
+      {
+        userId: 'u-aluna',
+        role: Role.TRAINEE,
+        name: 'Aluna',
+        username: 'aluna',
+        mustChangePassword: false,
+      },
       { limit: 100, offset: 100 },
       res,
     );

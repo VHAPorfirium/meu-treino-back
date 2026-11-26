@@ -8,10 +8,13 @@ import { AuthGuard } from '@nestjs/passport';
 import type { Request } from 'express';
 import { IS_PUBLIC_KEY } from './public.decorator';
 import { SecurityLogger } from '../security/security-logger';
-import { clientIp, requestId } from '../http/client-ip';
+import { clientIp, requestId, userAgent } from '../http/client-ip';
 
-/** Traduz o `info` do passport-jwt num motivo estável (nunca texto do usuário). */
-function unauthorizedReason(info: unknown): string {
+/** Traduz o `info`/erro do passport-jwt num motivo estável (nunca texto do usuário). */
+function unauthorizedReason(err: unknown, info: unknown): string {
+  if (err instanceof UnauthorizedException && /desativad/i.test(err.message)) {
+    return 'account_inactive';
+  }
   const name = (info as { name?: string } | undefined)?.name;
   const message = (info as { message?: string } | undefined)?.message ?? '';
   if (name === 'TokenExpiredError') return 'expired';
@@ -51,10 +54,12 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       const req = context.switchToHttp().getRequest<Request>();
       this.security.event('auth.unauthorized', {
         ip: clientIp(req),
+        userAgent: userAgent(req),
         requestId: requestId(req),
         method: req.method,
         path: req.originalUrl?.split('?')[0] ?? req.url,
-        reason: unauthorizedReason(info),
+        statusCode: 401,
+        reason: unauthorizedReason(err, info),
       });
       throw err instanceof Error ? err : new UnauthorizedException();
     }

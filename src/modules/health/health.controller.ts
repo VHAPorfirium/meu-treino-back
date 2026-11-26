@@ -26,6 +26,8 @@ const TABELAS_ESPERADAS = [
   'TrainingProgram',
   'ProgramAssignment',
   'FavoriteExercise',
+  // Auditoria de acessos (v1.1)
+  'AccessLog',
 ] as const;
 
 /**
@@ -43,6 +45,10 @@ const COLUNAS_ESPERADAS: [tabela: string, coluna: string][] = [
   ['Exercise', 'targetPt'],
   ['Exercise', 'equipmentPt'],
   ['Workout', 'programId'], // Programas
+  ['User', 'username'], // v1.1 login + ciclo de vida
+  ['User', 'cpfHash'],
+  ['User', 'active'],
+  ['User', 'mustChangePassword'],
 ];
 
 type Passo = { ok: boolean; code?: string; error?: string };

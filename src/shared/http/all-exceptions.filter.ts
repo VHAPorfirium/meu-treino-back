@@ -9,7 +9,7 @@ import {
 import { ThrottlerException } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { SecurityLogger } from '../security/security-logger';
-import { clientIp, requestId } from './client-ip';
+import { clientIp, requestId, userAgent } from './client-ip';
 
 /**
  * Filtro global de exceções.
@@ -62,9 +62,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
     if (exception instanceof ThrottlerException) {
       this.security.event('ratelimit.exceeded', {
         ip: clientIp(req),
+        userAgent: userAgent(req),
         requestId: rid,
         method,
         path,
+        statusCode: 429,
+        reason: 'rate_limit',
       });
     }
 

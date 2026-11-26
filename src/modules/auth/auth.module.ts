@@ -5,6 +5,7 @@ import { PassportModule } from '@nestjs/passport';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { LoginUseCase } from './application/use-cases/login.use-case';
+import { ChangePasswordUseCase } from './application/use-cases/change-password.use-case';
 import { JwtStrategy } from '../../shared/auth/jwt.strategy';
 import { getJwtSecret } from '../../shared/auth/jwt-secret';
 
@@ -25,6 +26,6 @@ import { getJwtSecret } from '../../shared/auth/jwt-secret';
     }),
   ],
   controllers: [AuthController],
-  providers: [LoginUseCase, JwtStrategy],
+  providers: [LoginUseCase, ChangePasswordUseCase, JwtStrategy],
 })
 export class AuthModule {}
