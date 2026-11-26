@@ -111,6 +111,48 @@ describe('RISCO 2 — número velho no dashboard', () => {
     expect(novo).toBe('novo');
   });
 
+  it('invalidação durante consulta em voo impede que valor antigo sobrescreva o cache', async () => {
+    const cache = await novoCache();
+    let resolverAntigo!: (v: { sessoes: number }) => void;
+    let marcarInicio!: () => void;
+    const iniciou = new Promise<void>((resolve) => {
+      marcarInicio = resolve;
+    });
+
+    const leituraAntiga = cache.lembrarDoUsuario(
+      'ninfa',
+      'progress:v1',
+      60_000,
+      () => {
+        marcarInicio();
+        return new Promise<{ sessoes: number }>((resolve) => {
+          resolverAntigo = resolve;
+        });
+      },
+    );
+
+    // Garante que a leitura antiga já está em voo no banco antes da invalidação
+    await iniciou;
+
+    // Mutação acontece enquanto a leitura antiga ainda está no banco
+    await cache.invalidarUsuario('ninfa');
+
+    // Leitura pós-mutação já dispara consulta nova e grava o dado atualizado
+    const leituraNova = await cache.lembrarDoUsuario('ninfa', 'progress:v1', 60_000, () =>
+      Promise.resolve({ sessoes: 2 }),
+    );
+    expect(leituraNova).toEqual({ sessoes: 2 });
+
+    // Quando a leitura antiga finalmente volta, ela NÃO pode sobrescrever o cache com 1
+    resolverAntigo({ sessoes: 1 });
+    await leituraAntiga;
+
+    const leituraSeguinte = await cache.lembrarDoUsuario('ninfa', 'progress:v1', 60_000, () =>
+      Promise.resolve({ sessoes: 99 }),
+    );
+    expect(leituraSeguinte).toEqual({ sessoes: 2 });
+  });
+
   it('invalidação nunca lança — a escrita no banco não pode falhar por causa do cache', async () => {
     const cache = await novoCache();
     (cache as unknown as { cache: { store: { keys: () => Promise<string[]> } } }).cache.store.keys =

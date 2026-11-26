@@ -7,6 +7,7 @@ import {
   PaginatedExercises,
 } from '../../domain/exercise.repository';
 import { ListExercisesQuery } from '../dto/list-exercises.query';
+import { DEFAULT_PAGE_SIZE } from '../../infrastructure/prisma-exercise.repository';
 import { CacheService, TTL } from '../../../../shared/cache/cache.service';
 
 // heurística: cuid começa com "c" e tem 25 chars; body_part é texto curto com espaço/minúsculas
@@ -30,7 +31,7 @@ function chaveDaBusca(f: ListExercisesFilter): string {
     `e=${(f.equipment ?? '').trim().toLowerCase()}`,
     `s=${(f.search ?? '').trim().toLowerCase()}`,
     `p=${f.page ?? 1}`,
-    `n=${f.pageSize ?? ''}`,
+    `n=${f.pageSize ?? DEFAULT_PAGE_SIZE}`,
   ];
   return `ex:list:v1:${partes.join('&')}`;
 }
