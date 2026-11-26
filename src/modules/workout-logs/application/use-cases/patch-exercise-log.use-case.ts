@@ -35,10 +35,24 @@ export class PatchExerciseLogUseCase {
     // Sessão finalizada continua aceitando PATCH: o replay da fila offline (E5)
     // pode chegar depois do `complete` e precisa ser inofensivo (idempotente).
 
-    if (dto.status === ExerciseStatus.REPLACED && !dto.actualExerciseId) {
-      throw new BadRequestException(
-        'actualExerciseId é obrigatório quando status = REPLACED',
-      );
+    const belongsToWorkout = await this.repo.workoutExerciseBelongsToWorkout(
+      log.workoutId,
+      workoutExerciseId,
+    );
+    if (!belongsToWorkout) {
+      throw new NotFoundException('Exercício não encontrado neste treino');
+    }
+
+    if (dto.status === ExerciseStatus.REPLACED) {
+      if (!dto.actualExerciseId) {
+        throw new BadRequestException(
+          'actualExerciseId é obrigatório quando status = REPLACED',
+        );
+      }
+      const substituteExists = await this.repo.exerciseExists(dto.actualExerciseId);
+      if (!substituteExists) {
+        throw new BadRequestException('Exercício substituto não encontrado');
+      }
     }
 
     // E4: se vieram séries, os agregados (compat c/ dashboard) são DERIVADOS delas.
