@@ -4,6 +4,7 @@ import {
   PROGRAM_REPOSITORY,
   ProgramRepository,
 } from '../../domain/program.repository';
+import { assertProgramOwnership } from '../program-ownership';
 
 /** Tira o aluno do programa: a participação vira histórico e os treinos saem da lista dele. */
 @Injectable()
@@ -13,9 +14,10 @@ export class ArchiveProgramAssignmentUseCase {
     private readonly programRepository: ProgramRepository,
   ) {}
 
-  async execute(assignmentId: string) {
+  async execute(assignmentId: string, trainerId?: string) {
     const assignment = await this.programRepository.findAssignmentById(assignmentId);
     if (!assignment) throw new NotFoundException('Participação não encontrada');
+    assertProgramOwnership(assignment.program, trainerId);
     if (assignment.status !== ProgramStatus.ARCHIVED) {
       await this.programRepository.archiveAssignment(assignmentId);
     }

@@ -29,7 +29,7 @@ export class ProgressPhotosController {
   ) {}
 
   // POST /api/progress-photos/upload-url { ext }  (TRAINEE) → { path, uploadUrl, token }
-  @Roles(Role.TRAINEE, Role.ADMIN)
+  @Roles(Role.TRAINEE)
   @Post('upload-url')
   @HttpCode(200)
   uploadUrl(@CurrentUser() user: AuthUser, @Body() dto: RequestUploadDto) {
@@ -37,28 +37,28 @@ export class ProgressPhotosController {
   }
 
   // POST /api/progress-photos { path, note?, takenAt? }  (TRAINEE) — registra após o upload
-  @Roles(Role.TRAINEE, Role.ADMIN)
+  @Roles(Role.TRAINEE)
   @Post()
   create(@CurrentUser() user: AuthUser, @Body() dto: RegisterPhotoDto) {
     return this.register.execute(user.userId, dto);
   }
 
-  // GET /api/progress-photos  (TRAINEE) — minhas fotos com URL assinada
-  @Roles(Role.TRAINEE, Role.ADMIN)
+  // GET /api/progress-photos  (TRAINEE) — todas as minhas fotos com URL assinada
+  @Roles(Role.TRAINEE)
   @Get()
   mine(@CurrentUser() user: AuthUser) {
     return this.list.execute(user.userId);
   }
 
-  // GET /api/progress-photos/user/:userId  (ADMIN) — fotos de um aluno
-  @Roles(Role.ADMIN)
+  // GET /api/progress-photos/user/:userId  (PERSONAL) — apenas fotos do vínculo ACTIVE atual
+  @Roles(Role.PERSONAL)
   @Get('user/:userId')
-  ofUser(@Param('userId') userId: string) {
-    return this.list.execute(userId);
+  ofUser(@CurrentUser() trainer: AuthUser, @Param('userId') userId: string) {
+    return this.list.executeForTrainer(trainer.userId, userId);
   }
 
   // DELETE /api/progress-photos/:id  (TRAINEE) — apaga a própria foto
-  @Roles(Role.TRAINEE, Role.ADMIN)
+  @Roles(Role.TRAINEE)
   @Delete(':id')
   delete(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.remove.execute(user.userId, id);

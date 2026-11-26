@@ -8,6 +8,7 @@ import {
   WORKOUT_REPOSITORY,
   WorkoutRepository,
 } from '../../domain/workout.repository';
+import { assertWorkoutOwnership } from '../workout-ownership';
 
 @Injectable()
 export class DeleteWorkoutUseCase {
@@ -16,9 +17,10 @@ export class DeleteWorkoutUseCase {
     private readonly repo: WorkoutRepository,
   ) {}
 
-  async execute(id: string) {
+  async execute(id: string, trainerId?: string) {
     const workout = await this.repo.findById(id);
     if (!workout) throw new NotFoundException('Treino não encontrado');
+    assertWorkoutOwnership(workout, trainerId);
 
     // Treino com sessões registradas faz parte do histórico/dashboard → não apaga.
     // (WorkoutLog.workoutId não tem cascade de propósito.)

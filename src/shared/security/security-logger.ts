@@ -18,6 +18,11 @@ export type SecurityEventName =
   | 'auth.account.updated' // dados cadastrais atualizados
   | 'auth.account.deactivated' // conta desativada
   | 'auth.account.reactivated' // conta reativada
+  | 'auth.profile.switched' // troca de perfil (ex.: PERSONAL <-> TRAINEE no mesmo CPF)
+  | 'link.requested' // personal solicitou vínculo a aluno
+  | 'link.accepted' // aluno aceitou vínculo (com Copy-on-Transfer)
+  | 'link.rejected' // aluno recusou convite de vínculo
+  | 'link.ended' // vínculo encerrado ou cancelado
   | 'authz.denied' // 403: autenticado, mas papel não permitido
   | 'ratelimit.exceeded'; // 429: estourou o rate limit global
 
@@ -47,6 +52,11 @@ const INFO_EVENTS: ReadonlySet<SecurityEventName> = new Set([
   'auth.account.created',
   'auth.account.updated',
   'auth.account.reactivated',
+  'auth.profile.switched',
+  'link.requested',
+  'link.accepted',
+  'link.rejected',
+  'link.ended',
 ]);
 
 /**

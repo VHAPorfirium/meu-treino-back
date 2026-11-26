@@ -1,5 +1,7 @@
+import { Role } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import {
+  IsEnum,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -17,7 +19,7 @@ export class CreateTraineeDto {
   /** CPF brasileiro (11 dígitos, com ou sem máscara). Validado módulo 11 no use-case. */
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
-  @IsNotEmpty({ message: 'Informe o CPF do aluno' })
+  @IsNotEmpty({ message: 'Informe o CPF' })
   @MaxLength(20)
   cpf: string;
 
@@ -33,4 +35,9 @@ export class CreateTraineeDto {
   @IsString()
   @MaxLength(40)
   username?: string;
+
+  /** Papel da conta (padrão TRAINEE; apenas ADMIN pode criar PERSONAL/RECEPTION/ADMIN). */
+  @IsOptional()
+  @IsEnum(Role, { message: 'Perfil inválido' })
+  role?: Role;
 }

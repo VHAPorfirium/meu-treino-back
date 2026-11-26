@@ -1,4 +1,4 @@
-// Prisma schema — App de Treino
+// Prisma schema — App de Treino (Ritmo v2.0 — Plataforma Multi-Personal)
 // Ajustes vs. schema original documentados em SYSTEM_DESIGN.md (§6.1)
 
 generator client {
@@ -13,7 +13,23 @@ datasource db {
 
 enum Role {
   ADMIN
+  RECEPTION
+  PERSONAL
   TRAINEE
+}
+
+enum LinkStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+  ENDED
+}
+
+enum LinkEndReason {
+  TRAINER_DEACTIVATED
+  TRAINEE_ENDED
+  TRAINER_ENDED
+  TRAINER_CANCELLED
 }
 
 // E10 — como o exercício é prescrito e registrado.
@@ -46,9 +62,9 @@ model User {
   id                 String               @id @default(cuid())
   name               String // nome de exibição (não precisa ser único)
   username           String               @unique // apelido normalizado (ex: gabriel.silva)
-  cpfHash            String?              @unique // blind index HMAC-SHA256 para login O(1)
+  cpfHash            String? // blind index HMAC-SHA256 para login O(1) — único por papel (permite PERSONAL + TRAINEE com mesmo CPF)
   cpfEncrypted       String? // CPF cifrado com AES-256-GCM (IV + AAD=userId)
-  role               Role // ADMIN ou TRAINEE — vários usuários por papel são permitidos
+  role               Role // ADMIN | RECEPTION | PERSONAL | TRAINEE
   pinHash            String // hash argon2id da senha (ou PIN legado da v1.0)
   active             Boolean              @default(true)
   mustChangePassword Boolean              @default(false)
@@ -62,7 +78,34 @@ model User {
   favoriteExercises  FavoriteExercise[] // exercícios marcados com estrela
   accessLogs         AccessLog[]          @relation("AccessLogUser")
   actedAccessLogs    AccessLog[]          @relation("AccessLogActor")
+  ownedWorkouts      Workout[]            @relation("OwnedWorkouts")
+  ownedPrograms      TrainingProgram[]    @relation("OwnedPrograms")
+  trainerLinks       TrainerTraineeLink[] @relation("TrainerLinks")
+  traineeLinks       TrainerTraineeLink[] @relation("TraineeLinks")
   createdAt          DateTime             @default(now())
+
+  @@unique([cpfHash, role])
+  @@index([cpfHash])
+}
+
+/// Vínculo Personal ↔ Aluno com solicitação, confirmação e histórico de encerramento (v2.0).
+model TrainerTraineeLink {
+  id             String          @id @default(cuid())
+  trainerId      String
+  traineeId      String
+  status         LinkStatus      @default(PENDING)
+  endedReason    LinkEndReason?
+  createdAt      DateTime        @default(now())
+  respondedAt    DateTime?
+  endedAt        DateTime?
+  trainer        User            @relation("TrainerLinks", fields: [trainerId], references: [id], onDelete: Cascade)
+  trainee        User            @relation("TraineeLinks", fields: [traineeId], references: [id], onDelete: Cascade)
+  progressPhotos ProgressPhoto[]
+  trainerNotes   TrainerNote[]
+
+  @@index([trainerId, status])
+  @@index([traineeId, status])
+  @@index([trainerId, traineeId])
 }
 
 model MuscleGroup {
@@ -119,18 +162,22 @@ model ExerciseAlternative {
 }
 
 model Workout {
-  id          String              @id @default(cuid())
-  name        String
-  dayOfWeek   Int? // 0=domingo ... 6=sábado
-  active      Boolean             @default(true)
-  exercises   WorkoutExercise[]
-  logs        WorkoutLog[]
-  assignments WorkoutAssignment[] // a quem este treino é direcionado (E1.1)
-  programId   String? // programa (contínuo, mesociclo ou desafio) ao qual o treino pertence
-  program     TrainingProgram?    @relation(fields: [programId], references: [id], onDelete: SetNull)
-  createdAt   DateTime            @default(now())
+  id             String              @id @default(cuid())
+  name           String
+  dayOfWeek      Int? // 0=domingo ... 6=sábado
+  active         Boolean             @default(true)
+  ownerTrainerId String? // personal dono do treino (opcional para preparar v3.0)
+  ownerTrainer   User?               @relation("OwnedWorkouts", fields: [ownerTrainerId], references: [id], onDelete: SetNull)
+  clonedFromId   String? // id do treino original quando portado via Copy-on-Transfer
+  exercises      WorkoutExercise[]
+  logs           WorkoutLog[]
+  assignments    WorkoutAssignment[] // a quem este treino é direcionado (E1.1)
+  programId      String? // programa (contínuo, mesociclo ou desafio) ao qual o treino pertence
+  program        TrainingProgram?    @relation(fields: [programId], references: [id], onDelete: SetNull)
+  createdAt      DateTime            @default(now())
 
   @@index([programId])
+  @@index([ownerTrainerId])
 }
 
 /// E1.1 — treino direcionado: 1 treino → N alunos, sem duplicar o treino.
@@ -147,48 +194,51 @@ model WorkoutAssignment {
 }
 
 model WorkoutExercise {
-  id          String   @id @default(cuid())
-  workoutId   String
-  exerciseId  String
-  order       Int
-  sets        Int
-  reps        String? // null quando mode = TIME (E10)
-  mode        ExerciseMode @default(REPS) // E10
+  id              String               @id @default(cuid())
+  workoutId       String
+  exerciseId      String
+  order           Int
+  sets            Int
+  reps            String? // null quando mode = TIME (E10)
+  mode            ExerciseMode         @default(REPS) // E10
   durationSeconds Int? // prescrição em segundos quando mode = TIME
-  restSeconds Int?
-  notes       String?
-  workout     Workout  @relation(fields: [workoutId], references: [id], onDelete: Cascade)
-  exercise    Exercise @relation(fields: [exerciseId], references: [id])
-  logEntries  WorkoutExerciseLog[]
+  restSeconds     Int?
+  notes           String?
+  workout         Workout              @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+  exercise        Exercise             @relation(fields: [exerciseId], references: [id])
+  logEntries      WorkoutExerciseLog[]
 
   @@index([workoutId])
 }
 
 model WorkoutLog {
-  id           String               @id @default(cuid())
-  workoutId    String
-  userId       String
-  date         DateTime             @default(now())
+  id                  String               @id @default(cuid())
+  workoutId           String
+  userId              String
+  date                DateTime             @default(now())
   // E9 — dia local ('YYYY-MM-DD' no fuso de APP_TIMEZONE), nao o dia UTC do servidor.
   // Chave de negocio da regra "uma sessao por treino por dia": treinar 22h em
   // Brasilia ja e o dia seguinte em UTC, e sem isso o bloqueio abriria sozinho a noite.
-  dayKey       String
-  completed    Boolean              @default(false)
-  workout      Workout              @relation(fields: [workoutId], references: [id])
-  user         User                 @relation(fields: [userId], references: [id])
-  exerciseLogs WorkoutExerciseLog[]
+  dayKey              String
+  completed           Boolean              @default(false)
+  programAssignmentId String? // vincula a sessão ao ProgramAssignment para preservar progresso após Copy-on-Transfer
+  programAssignment   ProgramAssignment?   @relation(fields: [programAssignmentId], references: [id], onDelete: SetNull)
+  workout             Workout              @relation(fields: [workoutId], references: [id])
+  user                User                 @relation(fields: [userId], references: [id])
+  exerciseLogs        WorkoutExerciseLog[]
 
   @@unique([userId, workoutId, dayKey])
   @@index([userId, date])
+  @@index([programAssignmentId])
 }
 
 model WorkoutExerciseLog {
-  id                String         @id @default(cuid())
+  id                String          @id @default(cuid())
   workoutLogId      String
   workoutExerciseId String
   status            ExerciseStatus
   actualExerciseId  String? // preenchido quando status = REPLACED
-  actualExercise    Exercise?      @relation("ActualExercise", fields: [actualExerciseId], references: [id])
+  actualExercise    Exercise?       @relation("ActualExercise", fields: [actualExerciseId], references: [id])
   loadUsed          Float? // agregado: max(peso) das séries quando `sets` existir (compat c/ dashboard)
   setsCompleted     Int? // agregado: count(séries) quando `sets` existir
   totalSeconds      Int? // E10 — agregado: soma dos `durationSeconds` das séries
@@ -215,29 +265,36 @@ model SetLog {
 }
 
 /// E6 — foto de progresso (arquivo no bucket PRIVADO `progress` do Supabase; aqui só o caminho).
+/// Isolada por `trainerLinkId` na visão do Personal (o aluno sempre vê todas as próprias fotos).
 model ProgressPhoto {
-  id      String   @id @default(cuid())
-  userId  String
-  path    String   @unique // ex: <userId>/<uuid>.jpg
-  takenAt DateTime @default(now())
-  note    String?
-  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id            String              @id @default(cuid())
+  userId        String
+  path          String              @unique // ex: <userId>/<uuid>.jpg
+  takenAt       DateTime            @default(now())
+  note          String?
+  trainerLinkId String? // vínculo ACTIVE no momento do upload (isola fotos entre personais)
+  trainerLink   TrainerTraineeLink? @relation(fields: [trainerLinkId], references: [id], onDelete: SetNull)
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, takenAt])
+  @@index([trainerLinkId])
 }
 
-/// E6 — recado do personal (ADMIN) pra um aluno (TRAINEE).
+/// E6 — recado do personal (PERSONAL) pra um aluno (TRAINEE), isolado por vínculo.
 model TrainerNote {
-  id        String    @id @default(cuid())
-  fromId    String
-  toId      String
-  text      String
-  readAt    DateTime?
-  createdAt DateTime  @default(now())
-  from      User      @relation("NotesSent", fields: [fromId], references: [id])
-  to        User      @relation("NotesReceived", fields: [toId], references: [id], onDelete: Cascade)
+  id            String              @id @default(cuid())
+  fromId        String
+  toId          String
+  text          String
+  readAt        DateTime?
+  trainerLinkId String? // vínculo ACTIVE no momento do envio (isola recados entre personais)
+  trainerLink   TrainerTraineeLink? @relation(fields: [trainerLinkId], references: [id], onDelete: SetNull)
+  createdAt     DateTime            @default(now())
+  from          User                @relation("NotesSent", fields: [fromId], references: [id])
+  to            User                @relation("NotesReceived", fields: [toId], references: [id], onDelete: Cascade)
 
   @@index([toId, createdAt])
+  @@index([trainerLinkId])
 }
 
 /// E6 — inscrição Web Push (VAPID) de um dispositivo do usuário.
@@ -255,16 +312,21 @@ model PushSubscription {
 /// constante (CONTINUOUS) ou uma jornada com prazo (MESOCYCLE / CHALLENGE).
 /// Regras de duração: ver `ProgramDurationPolicy` no módulo programs.
 model TrainingProgram {
-  id          String              @id @default(cuid())
-  name        String
-  description String?
-  type        ProgramType         @default(CONTINUOUS)
-  targetWeeks Int? // só MESOCYCLE
-  targetDays  Int? // só CHALLENGE
-  workouts    Workout[]
-  assignments ProgramAssignment[]
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
+  id             String              @id @default(cuid())
+  name           String
+  description    String?
+  type           ProgramType         @default(CONTINUOUS)
+  targetWeeks    Int? // só MESOCYCLE
+  targetDays     Int? // só CHALLENGE
+  ownerTrainerId String? // personal dono do programa
+  ownerTrainer   User?               @relation("OwnedPrograms", fields: [ownerTrainerId], references: [id], onDelete: SetNull)
+  clonedFromId   String? // id do programa original quando portado via Copy-on-Transfer
+  workouts       Workout[]
+  assignments    ProgramAssignment[]
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([ownerTrainerId])
 }
 
 /// Participação de um aluno num programa: cada aluno tem o próprio "Dia 1",
@@ -281,6 +343,7 @@ model ProgramAssignment {
   reportData  Json? // relatório gerado na conclusão
   program     TrainingProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
   user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workoutLogs WorkoutLog[]
   createdAt   DateTime        @default(now())
 
   @@index([userId, status])

@@ -28,6 +28,8 @@ const TABELAS_ESPERADAS = [
   'FavoriteExercise',
   // Auditoria de acessos (v1.1)
   'AccessLog',
+  // Plataforma Multi-Personal (v2.0)
+  'TrainerTraineeLink',
 ] as const;
 
 /**
@@ -49,6 +51,13 @@ const COLUNAS_ESPERADAS: [tabela: string, coluna: string][] = [
   ['User', 'cpfHash'],
   ['User', 'active'],
   ['User', 'mustChangePassword'],
+  ['Workout', 'ownerTrainerId'], // v2.0 multi-personal + portabilidade
+  ['Workout', 'clonedFromId'],
+  ['TrainingProgram', 'ownerTrainerId'],
+  ['TrainingProgram', 'clonedFromId'],
+  ['WorkoutLog', 'programAssignmentId'],
+  ['ProgressPhoto', 'trainerLinkId'],
+  ['TrainerNote', 'trainerLinkId'],
 ];
 
 type Passo = { ok: boolean; code?: string; error?: string };

@@ -59,10 +59,10 @@ export class WorkoutsController {
     private readonly getWorkoutSession: GetWorkoutSessionUseCase,
   ) {}
 
-  // ── leitura da aluna ───────────────────────────────────────────────────────
+  // ── leitura do aluno ───────────────────────────────────────────────────────
 
   // GET /api/workouts/today?dayOfWeek=1  — treino direcionado ao usuário (com isFallback)
-  @Roles(Role.TRAINEE, Role.ADMIN)
+  @Roles(Role.TRAINEE)
   @Get('today')
   today(
     @CurrentUser() user: AuthUser,
@@ -72,109 +72,137 @@ export class WorkoutsController {
   }
 
   // GET /api/workouts/mine — treinos direcionados ao usuário logado
-  @Roles(Role.TRAINEE, Role.ADMIN)
+  @Roles(Role.TRAINEE)
   @Get('mine')
   mine(@CurrentUser() user: AuthUser) {
     return this.listMine.execute(user.userId);
   }
 
   // GET /api/workouts/:id/session — treino escolhido pelo aluno + sessão do dia
-  @Roles(Role.TRAINEE, Role.ADMIN)
+  @Roles(Role.TRAINEE)
   @Get(':id/session')
   session(@CurrentUser() user: AuthUser, @Param('id') workoutId: string) {
     return this.getWorkoutSession.execute(user.userId, workoutId);
   }
 
-  // ── gestão (admin) ─────────────────────────────────────────────────────────
+  // ── gestão (personal) ──────────────────────────────────────────────────────
 
-  // GET /api/workouts — lista todos os treinos (com destinatários)
-  @Roles(Role.ADMIN)
+  // GET /api/workouts — lista apenas os treinos do personal autenticado
+  @Roles(Role.PERSONAL)
   @Get()
-  list() {
-    return this.listWorkouts.execute();
+  list(@CurrentUser() trainer: AuthUser) {
+    return this.listWorkouts.execute(trainer.userId);
   }
 
-  // GET /api/workouts/:id — treino com exercícios + destinatários
-  @Roles(Role.ADMIN)
+  // GET /api/workouts/:id — treino com exercícios + destinatários (com checagem de ownership)
+  @Roles(Role.PERSONAL)
   @Get(':id')
-  detail(@Param('id') id: string) {
-    return this.getWorkout.execute(id);
+  detail(@CurrentUser() trainer: AuthUser, @Param('id') id: string) {
+    return this.getWorkout.execute(id, trainer.userId);
   }
 
   // POST /api/workouts
-  @Roles(Role.ADMIN)
+  @Roles(Role.PERSONAL)
   @Post()
-  create(@Body() dto: CreateWorkoutDto) {
-    return this.createWorkout.execute(dto);
+  create(@CurrentUser() trainer: AuthUser, @Body() dto: CreateWorkoutDto) {
+    return this.createWorkout.execute(dto, trainer.userId);
   }
 
   // PATCH /api/workouts/:id — nome / dayOfWeek / active (E1)
-  @Roles(Role.ADMIN)
+  @Roles(Role.PERSONAL)
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateWorkoutDto) {
-    return this.updateWorkout.execute(id, dto);
+  update(
+    @CurrentUser() trainer: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateWorkoutDto,
+  ) {
+    return this.updateWorkout.execute(id, dto, trainer.userId);
   }
 
   // DELETE /api/workouts/:id — 409 se houver histórico (E1)
-  @Roles(Role.ADMIN)
+  @Roles(Role.PERSONAL)
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.deleteWorkout.execute(id);
+  remove(@CurrentUser() trainer: AuthUser, @Param('id') id: string) {
+    return this.deleteWorkout.execute(id, trainer.userId);
   }
 
   // PUT /api/workouts/:id/assignees { userIds } — pra quem é o treino (E1.1)
-  @Roles(Role.ADMIN)
+  @Roles(Role.PERSONAL)
   @Put(':id/assignees')
-  assignees(@Param('id') id: string, @Body() dto: SetAssigneesDto) {
-    return this.setAssignees.execute(id, dto);
+  assignees(
+    @CurrentUser() trainer: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: SetAssigneesDto,
+  ) {
+    return this.setAssignees.execute(id, dto, trainer.userId);
   }
 
   // POST /api/workouts/:id/duplicate (E2)
-  @Roles(Role.ADMIN)
+  @Roles(Role.PERSONAL)
   @Post(':id/duplicate')
   @HttpCode(201)
-  duplicate(@Param('id') id: string, @Body() dto: DuplicateWorkoutDto) {
-    return this.duplicateWorkout.execute(id, dto);
+  duplicate(
+    @CurrentUser() trainer: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: DuplicateWorkoutDto,
+  ) {
+    return this.duplicateWorkout.execute(id, dto, trainer.userId);
   }
 
-  // POST /api/workouts/:id/exercises/batch { items[] } — N exercícios numa
-  // transação, `order` definido pelo servidor (E7). Antes de :id/exercises.
-  @Roles(Role.ADMIN)
+  // POST /api/workouts/:id/exercises/batch { items[] }
+  @Roles(Role.PERSONAL)
   @Post(':id/exercises/batch')
   @HttpCode(201)
-  addExBatch(@Param('id') id: string, @Body() dto: AddExercisesBatchDto) {
-    return this.addExercisesBatch.execute(id, dto);
+  addExBatch(
+    @CurrentUser() trainer: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: AddExercisesBatchDto,
+  ) {
+    return this.addExercisesBatch.execute(id, dto, trainer.userId);
   }
 
   // POST /api/workouts/:id/exercises
-  @Roles(Role.ADMIN)
+  @Roles(Role.PERSONAL)
   @Post(':id/exercises')
-  addEx(@Param('id') id: string, @Body() dto: AddExerciseDto) {
-    return this.addExercise.execute(id, dto);
+  addEx(
+    @CurrentUser() trainer: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: AddExerciseDto,
+  ) {
+    return this.addExercise.execute(id, dto, trainer.userId);
   }
 
-  // PATCH /api/workouts/:id/exercises/reorder { items } (E2) — antes do :weId pra não colidir
-  @Roles(Role.ADMIN)
+  // PATCH /api/workouts/:id/exercises/reorder { items } (E2)
+  @Roles(Role.PERSONAL)
   @Patch(':id/exercises/reorder')
-  reorder(@Param('id') id: string, @Body() dto: ReorderExercisesDto) {
-    return this.reorderExercises.execute(id, dto);
+  reorder(
+    @CurrentUser() trainer: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: ReorderExercisesDto,
+  ) {
+    return this.reorderExercises.execute(id, dto, trainer.userId);
   }
 
   // PATCH /api/workouts/:id/exercises/:weId — sets/reps/rest/notes (E1)
-  @Roles(Role.ADMIN)
+  @Roles(Role.PERSONAL)
   @Patch(':id/exercises/:weId')
   updateEx(
+    @CurrentUser() trainer: AuthUser,
     @Param('id') id: string,
     @Param('weId') weId: string,
     @Body() dto: UpdateWorkoutExerciseDto,
   ) {
-    return this.updateExercise.execute(id, weId, dto);
+    return this.updateExercise.execute(id, weId, dto, trainer.userId);
   }
 
   // DELETE /api/workouts/:id/exercises/:weId — 409 se já executado (E1)
-  @Roles(Role.ADMIN)
+  @Roles(Role.PERSONAL)
   @Delete(':id/exercises/:weId')
-  removeEx(@Param('id') id: string, @Param('weId') weId: string) {
-    return this.removeExercise.execute(id, weId);
+  removeEx(
+    @CurrentUser() trainer: AuthUser,
+    @Param('id') id: string,
+    @Param('weId') weId: string,
+  ) {
+    return this.removeExercise.execute(id, weId, trainer.userId);
   }
 }

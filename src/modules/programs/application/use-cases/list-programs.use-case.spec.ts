@@ -13,6 +13,8 @@ describe('ListProgramsUseCase — cálculo de progresso em lote (sem N+1)', () =
         type: ProgramType.CHALLENGE,
         targetWeeks: null,
         targetDays: 30,
+        ownerTrainerId: null,
+        clonedFromId: null,
         createdAt: new Date(),
         updatedAt: new Date(),
         workouts: [{ id: 'w1', name: 'Treino A', dayOfWeek: 1, active: true }],
@@ -62,6 +64,8 @@ describe('ListProgramsUseCase — cálculo de progresso em lote (sem N+1)', () =
         type: ProgramType.CONTINUOUS,
         targetWeeks: null,
         targetDays: null,
+        ownerTrainerId: null,
+        clonedFromId: null,
         createdAt: new Date(),
         updatedAt: new Date(),
         workouts: [{ id: 'w2', name: 'Treino B', dayOfWeek: 2, active: true }],
@@ -116,6 +120,7 @@ describe('ListProgramsUseCase — cálculo de progresso em lote (sem N+1)', () =
       ['u1', 'u2'],
       ['w1'],
       '2026-11-01',
+      ['a1', 'a2'],
     );
 
     expect(result[0].assignments[0].progress).toMatchObject({

@@ -20,29 +20,29 @@ export class NotesController {
     private readonly markRead: MarkNoteReadUseCase,
   ) {}
 
-  // POST /api/notes { toId, text }  (ADMIN) — recado do personal pra um aluno
-  @Roles(Role.ADMIN)
+  // POST /api/notes { toId, text }  (PERSONAL) — recado do personal pra aluno vinculado
+  @Roles(Role.PERSONAL)
   @Post()
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateNoteDto) {
     return this.createNote.execute(user.userId, dto);
   }
 
   // GET /api/notes/mine  (TRAINEE) — meus recados + não lidos
-  @Roles(Role.TRAINEE, Role.ADMIN)
+  @Roles(Role.TRAINEE)
   @Get('mine')
   mine(@CurrentUser() user: AuthUser) {
     return this.listMine.execute(user.userId);
   }
 
-  // GET /api/notes/user/:userId  (ADMIN) — recados enviados a um aluno
-  @Roles(Role.ADMIN)
+  // GET /api/notes/user/:userId  (PERSONAL) — recados do vínculo ativo atual com o aluno
+  @Roles(Role.PERSONAL)
   @Get('user/:userId')
-  forUser(@Param('userId') userId: string) {
-    return this.listForUser.execute(userId);
+  forUser(@CurrentUser() trainer: AuthUser, @Param('userId') userId: string) {
+    return this.listForUser.execute(trainer.userId, userId);
   }
 
   // PATCH /api/notes/:id/read  (TRAINEE) — marca como lido
-  @Roles(Role.TRAINEE, Role.ADMIN)
+  @Roles(Role.TRAINEE)
   @Patch(':id/read')
   read(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.markRead.execute(user.userId, id);

@@ -68,12 +68,14 @@ export class PrismaWorkoutRepository implements WorkoutRepository {
     name: string;
     dayOfWeek?: number;
     active?: boolean;
+    ownerTrainerId?: string;
   }): Promise<Workout> {
     return this.prisma.workout.create({
       data: {
         name: data.name,
         dayOfWeek: data.dayOfWeek,
         active: data.active ?? true,
+        ...(data.ownerTrainerId ? { ownerTrainerId: data.ownerTrainerId } : {}),
       },
     });
   }
@@ -126,10 +128,11 @@ export class PrismaWorkoutRepository implements WorkoutRepository {
    *
    * Duas consultas simples em vez de um `include` aninhado junto com `_count`:
    * é mais previsível sob o pooler (pgbouncer) e, com zero treinos, nem chega a
-   * tocar em `WorkoutAssignment` — a tela do admin abre mesmo num banco recém-criado.
+   * tocar em `WorkoutAssignment` — a tela do personal abre mesmo num banco recém-criado.
    */
-  async listAll(): Promise<any[]> {
+  async listAll(ownerTrainerId?: string): Promise<any[]> {
     const rows = await this.prisma.workout.findMany({
+      where: ownerTrainerId ? { ownerTrainerId } : undefined,
       orderBy: [{ active: 'desc' }, { dayOfWeek: 'asc' }, { createdAt: 'desc' }],
       include: {
         _count: { select: { exercises: true } },
@@ -375,7 +378,7 @@ export class PrismaWorkoutRepository implements WorkoutRepository {
 
   async duplicate(
     id: string,
-    opts: { name: string; copyAssignees: boolean },
+    opts: { name: string; copyAssignees: boolean; ownerTrainerId?: string },
   ): Promise<Workout> {
     return this.prisma.$transaction(async (tx) => {
       const src = await tx.workout.findUniqueOrThrow({
@@ -383,7 +386,12 @@ export class PrismaWorkoutRepository implements WorkoutRepository {
         include: { exercises: true, assignments: true },
       });
       const copy = await tx.workout.create({
-        data: { name: opts.name, dayOfWeek: null, active: true },
+        data: {
+          name: opts.name,
+          dayOfWeek: null,
+          active: true,
+          ownerTrainerId: opts.ownerTrainerId ?? src.ownerTrainerId ?? null,
+        },
       });
       if (src.exercises.length) {
         await tx.workoutExercise.createMany({

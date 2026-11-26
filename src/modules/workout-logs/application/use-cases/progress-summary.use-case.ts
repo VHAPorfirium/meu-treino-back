@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { ExerciseStatus } from '@prisma/client';
 import { PrismaService } from '../../../../shared/prisma/prisma.service';
 import { CacheService, TTL } from '../../../../shared/cache/cache.service';
+import { TrainerAccessService } from '../../../links/application/trainer-access.service';
 import {
   diaLocal,
   inicioDaSemanaLocal,
@@ -13,54 +14,82 @@ export class ProgressSummaryUseCase {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
+    @Optional() private readonly trainerAccess?: TrainerAccessService,
   ) {}
 
   /**
-   * Chave do cache. O `userId` aqui é **sobre quem** é o resumo, não quem
-   * perguntou — a rota é ADMIN-only e dois admins veem exatamente a mesma coisa.
-   * Mesmo assim vai por `lembrarDoUsuario`: é o que amarra a entrada ao aluno e
-   * faz a invalidação das escritas DELE limparem o resumo certo.
+   * Chave do cache:
+   *  - Com `userId`: `dono = userId`, `nome = progress:v1` (limpa quando o aluno treina).
+   *  - Sem `userId` (agregado da carteira de um personal): `dono = 'all'`,
+   *    `nome = progress:v1:t:<trainerId>` — assim cada personal tem o próprio agregado
+   *    isolado e `invalidarProgresso` (`invalidarUsuario('all')`) continua invalidando todos!
    */
-  static chave(userId?: string) {
-    return { dono: userId ?? 'all', nome: 'progress:v1' };
+  static chave(userId?: string, trainerId?: string) {
+    if (userId) return { dono: userId, nome: 'progress:v1' };
+    return {
+      dono: 'all',
+      nome: trainerId ? `progress:v1:t:${trainerId}` : 'progress:v1',
+    };
   }
 
   /**
-   * @param userId quando informado, restringe o resumo a um aluno. Sem ele, o
-   * resumo é **agregado**: soma as sessões de todos os alunos. Nesse modo,
-   * `streak` e `heatmap` passam a significar "dias em que alguém treinou", não
-   * a constância de uma pessoa — o front avisa isso na tela.
+   * @param userId quando informado, restringe o resumo a um aluno (validando vínculo ACTIVE).
+   * Sem ele, agrega apenas os alunos com vínculo ACTIVE da carteira do `trainerId`.
    */
-  execute(userId?: string) {
-    const { dono, nome } = ProgressSummaryUseCase.chave(userId);
+  async execute(userId?: string, trainerId?: string) {
+    let scopedUserIds: string[] | undefined;
+    if (trainerId && this.trainerAccess) {
+      if (userId) {
+        await this.trainerAccess.assertActiveLink(trainerId, userId);
+      } else {
+        scopedUserIds = await this.trainerAccess.getActiveTraineeIds(trainerId);
+      }
+    }
+
+    const { dono, nome } = ProgressSummaryUseCase.chave(userId, trainerId);
     return this.cache.lembrarDoUsuario(dono, nome, TTL.PROGRESSO, () =>
-      this.calcular(userId),
+      this.calcular(userId, new Date(), scopedUserIds),
     );
   }
 
-  async calcular(userId?: string, now: Date = new Date()) {
+  async calcular(
+    userId?: string,
+    now: Date = new Date(),
+    scopedUserIds?: string[],
+  ) {
     const todayKey = diaLocal(now);
     const since90Key = somarDias(todayKey, -90);
     const since56Key = somarDias(todayKey, -55);
     const since30Key = somarDias(todayKey, -29); // últimos 30 dias locais (incluindo hoje)
     const since60Key = somarDias(todayKey, -59); // janela de 30 dias locais imediatamente anterior
 
-    const logs = await this.prisma.workoutLog.findMany({
-      where: { dayKey: { gte: since90Key }, ...(userId ? { userId } : {}) },
-      orderBy: [{ dayKey: 'asc' }, { date: 'asc' }],
-      include: {
-        exerciseLogs: {
-          include: {
-            workoutExercise: {
-              select: {
-                exercise: { select: { id: true, name: true, namePt: true } },
+    const whereUser = userId
+      ? { userId }
+      : scopedUserIds !== undefined
+        ? { userId: { in: scopedUserIds } }
+        : {};
+
+    const logs =
+      scopedUserIds !== undefined && scopedUserIds.length === 0
+        ? []
+        : await this.prisma.workoutLog.findMany({
+            where: { dayKey: { gte: since90Key }, ...whereUser },
+            orderBy: [{ dayKey: 'asc' }, { date: 'asc' }],
+            include: {
+              exerciseLogs: {
+                include: {
+                  workoutExercise: {
+                    select: {
+                      exercise: { select: { id: true, name: true, namePt: true } },
+                    },
+                  },
+                  actualExercise: {
+                    select: { id: true, name: true, namePt: true },
+                  },
+                },
               },
             },
-            actualExercise: { select: { id: true, name: true, namePt: true } },
-          },
-        },
-      },
-    });
+          });
 
     const logDay = (l: (typeof logs)[number]) => l.dayKey || diaLocal(l.date);
     const inDayRange = (k: string, fromKey: string, toInclusiveKey: string) =>

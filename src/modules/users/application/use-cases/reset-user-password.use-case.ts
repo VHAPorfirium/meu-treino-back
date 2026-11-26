@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Role } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { UserStatusCacheService } from '../../../../shared/auth/user-status-cache.service';
 import { CryptoService } from '../../../../shared/security/crypto.service';
@@ -32,6 +34,26 @@ export class ResetUserPasswordUseCase {
     const target = await this.users.findById(userId);
     if (!target) {
       throw new NotFoundException('Usuário não encontrado');
+    }
+
+    if (
+      ctx.actorRole === Role.RECEPTION &&
+      (target.role === Role.ADMIN || target.role === Role.RECEPTION)
+    ) {
+      this.security.event('authz.denied', {
+        ip: ctx.ip,
+        userAgent: ctx.userAgent,
+        requestId: ctx.requestId,
+        userId: ctx.actorUserId,
+        role: ctx.actorRole,
+        method: 'POST',
+        path: `/api/users/${target.id}/reset-password`,
+        statusCode: 403,
+        reason: 'reception_cannot_reset_admin_or_reception',
+      });
+      throw new ForbiddenException(
+        'A Portaria só pode redefinir senhas de alunos e personais',
+      );
     }
 
     const strength = validateStrongPassword(dto.newPassword);

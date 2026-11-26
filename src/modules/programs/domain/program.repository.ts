@@ -29,6 +29,7 @@ export interface CreateProgramData {
   targetWeeks: number | null;
   targetDays: number | null;
   workoutIds: string[];
+  ownerTrainerId?: string;
 }
 
 export interface UpdateProgramData {
@@ -46,6 +47,7 @@ export interface CompletedProgramSessionDay {
   userId: string;
   workoutId: string;
   dayKey: string;
+  programAssignmentId?: string | null;
 }
 
 /** Status em que o aluno ainda "está" no programa (aparece na tela dele). */
@@ -65,10 +67,10 @@ export interface ProgramRepository {
 
   findProgramById(programId: string): Promise<ProgramWithDetails | null>;
 
-  listPrograms(): Promise<ProgramWithDetails[]>;
+  listPrograms(ownerTrainerId?: string): Promise<ProgramWithDetails[]>;
 
-  /** Retorna os IDs existentes dentre os `workoutIds` informados. */
-  findExistingWorkoutIds(workoutIds: string[]): Promise<string[]>;
+  /** Retorna os IDs existentes (e pertencentes ao personal, se informado) dentre `workoutIds`. */
+  findExistingWorkoutIds(workoutIds: string[], ownerTrainerId?: string): Promise<string[]>;
 
   /** Participação atual do aluno (ACTIVE ou COMPLETED ainda não arquivada). */
   findCurrentAssignmentByUser(userId: string): Promise<AssignmentWithProgram | null>;
@@ -90,20 +92,22 @@ export interface ProgramRepository {
 
   markAssignmentCompleted(assignmentId: string, programReport: ProgramReport): Promise<void>;
 
-  /** Sessões concluídas pelo aluno nos treinos do programa desde o "Dia 1", em ordem cronológica. */
+  /** Sessões concluídas pelo aluno no programa (via programAssignmentId ou treinos do programa) desde o "Dia 1". */
   listCompletedSessionsSince(
     userId: string,
     workoutIds: string[],
     startDayKey: string,
+    assignmentId?: string,
   ): Promise<CompletedProgramSession[]>;
 
   /**
-   * Busca em lote os dias concluídos de vários participantes/treinos a partir do
-   * menor `startDayKey`, eliminando N+1 em ListProgramsUseCase e GetProgramUseCase.
+   * Busca em lote os dias concluídos de vários participantes/treinos (incluindo logs portados
+   * via `programAssignmentId`) a partir do menor `startDayKey`, eliminando N+1.
    */
   listCompletedSessionDaysForUsers(
     userIds: string[],
     workoutIds: string[],
     minStartDayKey: string,
+    assignmentIds?: string[],
   ): Promise<CompletedProgramSessionDay[]>;
 }

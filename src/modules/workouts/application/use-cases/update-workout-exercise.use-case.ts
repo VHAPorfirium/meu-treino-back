@@ -10,6 +10,7 @@ import {
   WorkoutRepository,
 } from '../../domain/workout.repository';
 import { UpdateWorkoutExerciseDto } from '../dto/update-workout-exercise.dto';
+import { assertWorkoutOwnership } from '../workout-ownership';
 
 @Injectable()
 export class UpdateWorkoutExerciseUseCase {
@@ -22,7 +23,14 @@ export class UpdateWorkoutExerciseUseCase {
     workoutId: string,
     workoutExerciseId: string,
     dto: UpdateWorkoutExerciseDto,
+    trainerId?: string,
   ) {
+    if (trainerId) {
+      const workout = await this.repo.findById(workoutId);
+      if (!workout) throw new NotFoundException('Treino não encontrado');
+      assertWorkoutOwnership(workout, trainerId);
+    }
+
     // garante que o exercício pertence a ESTE treino (evita editar via id alheio)
     const we = await this.repo.findExerciseInWorkout(workoutId, workoutExerciseId);
     if (!we) throw new NotFoundException('Exercício não encontrado neste treino');

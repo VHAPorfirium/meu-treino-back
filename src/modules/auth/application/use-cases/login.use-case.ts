@@ -7,7 +7,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import type { User } from '@prisma/client';
+import { Role, User } from '@prisma/client';
 import * as argon2 from 'argon2';
 import {
   USER_REPOSITORY,
@@ -33,16 +33,28 @@ export interface LoginContext {
   requestId?: string;
 }
 
-export interface LoginResult {
-  token: string;
-  user: {
-    id: string;
-    name: string;
-    username: string;
-    role: string;
-    mustChangePassword: boolean;
-  };
+export interface ProfileChoice {
+  role: Role;
+  name: string;
+  username: string;
 }
+
+export type LoginResult =
+  | {
+      requiresProfileSelection?: false;
+      token: string;
+      user: {
+        id: string;
+        name: string;
+        username: string;
+        role: Role;
+        mustChangePassword: boolean;
+      };
+    }
+  | {
+      requiresProfileSelection: true;
+      profiles: ProfileChoice[];
+    };
 
 let dummyHashPromise: Promise<string> | null = null;
 
@@ -154,50 +166,79 @@ export class LoginUseCase {
     };
 
     try {
-      // 2) Busca O(1) por blind index HMAC-SHA256 do CPF.
-      //    Fallback legado por `username` é aceito SOMENTE para contas da v1.0 ainda
-      //    sem `cpfHash` cadastrado — contas já migradas exigem login por CPF.
-      let user: User | null = null;
+      // 2) Busca O(1) por blind index HMAC-SHA256 do CPF (pode retornar 1..2 contas
+      //    quando a mesma pessoa tem perfil PERSONAL e TRAINEE com o mesmo CPF).
+      //    Fallback legado por `username` é aceito SOMENTE para contas sem `cpfHash`.
+      let candidates: User[] = [];
       if (cpfMode) {
         if (isValidCpf(cpfDigits)) {
-          user = await this.users.findByCpfHash(this.crypto.hashCpf(cpfDigits));
+          candidates = await this.users.findManyByCpfHash(
+            this.crypto.hashCpf(cpfDigits),
+          );
+          if (dto.role) {
+            candidates = candidates.filter((u) => u.role === dto.role);
+          }
         }
       } else {
         const normalizedUsername = normalizeUsername(rawIdentifier);
         if (normalizedUsername) {
           const candidate = await this.users.findByUsername(normalizedUsername);
           if (candidate && candidate.cpfHash === null) {
-            user = candidate;
+            candidates = [candidate];
           }
         }
       }
 
-      // 3) Anti-timing attack: executa argon2.verify mesmo quando a conta não existe.
-      if (!user) {
+      // 3) Anti-timing attack: executa argon2.verify mesmo quando nenhuma conta existe.
+      if (candidates.length === 0) {
         const dummyHash = await getDummyArgonHash();
         await argon2.verify(dummyHash, dto.password).catch(() => false);
         return fail('invalid_credentials');
       }
 
-      const passwordOk = await argon2
-        .verify(user.pinHash, dto.password)
-        .catch(() => false);
-      if (!passwordOk) {
+      // 4) Verifica a senha em todos os perfis candidatos (no máx. 1–2 contas por CPF).
+      const matched: User[] = [];
+      for (const candidate of candidates) {
+        const ok = await argon2
+          .verify(candidate.pinHash, dto.password)
+          .catch(() => false);
+        if (ok) matched.push(candidate);
+      }
+
+      if (matched.length === 0) {
         return fail('invalid_credentials', 'Credenciais inválidas', {
-          userId: user.id,
-          role: user.role,
+          userId: candidates.length === 1 ? candidates[0].id : undefined,
+          role: candidates.length === 1 ? candidates[0].role : undefined,
         });
       }
 
-      // 4) Checa conta ativa somente APÓS validar senha (não vaza status para terceiros).
-      if (!user.active) {
+      // 5) Checa contas ativas somente APÓS validar a senha (não vaza status para terceiros).
+      const activeMatched = matched.filter((u) => u.active);
+      if (activeMatched.length === 0) {
         return fail('account_inactive', 'Conta desativada. Procure a recepção.', {
-          userId: user.id,
-          role: user.role,
+          userId: matched[0].id,
+          role: matched[0].role,
         });
       }
 
-      // 5) Contas legadas (PIN de 4 dígitos) são forçadas a atualizar para senha forte.
+      // 6) Mesmo CPF + mesma senha em múltiplos perfis ativos (ex.: PERSONAL + TRAINEE):
+      //    pede escolha de perfil (somente APÓS validar senha, sem vazar contas!).
+      if (activeMatched.length > 1) {
+        settled = true;
+        this.throttle.releaseAttempt(key);
+        return {
+          requiresProfileSelection: true,
+          profiles: activeMatched.map((u) => ({
+            role: u.role,
+            name: u.name,
+            username: u.username,
+          })),
+        };
+      }
+
+      const user = activeMatched[0];
+
+      // 7) Contas legadas (PIN de 4 dígitos) são forçadas a atualizar para senha forte.
       const strongCheck = validateStrongPassword(dto.password);
       let mustChangePassword = user.mustChangePassword || !strongCheck.valid;
       if (!user.mustChangePassword && !strongCheck.valid) {

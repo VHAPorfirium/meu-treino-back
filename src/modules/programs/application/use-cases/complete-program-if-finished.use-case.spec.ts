@@ -25,6 +25,8 @@ function buildAssignment(overrides: {
       type: overrides.programType,
       targetWeeks: null,
       targetDays: overrides.targetDays ?? null,
+      ownerTrainerId: null,
+      clonedFromId: null,
       createdAt: new Date(),
       updatedAt: new Date(),
       workouts: [{ id: 'treino-perna', name: 'Perna', dayOfWeek: null, active: true }],

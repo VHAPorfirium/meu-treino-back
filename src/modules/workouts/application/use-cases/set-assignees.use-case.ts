@@ -3,6 +3,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import {
@@ -13,12 +14,14 @@ import {
   USER_REPOSITORY,
   UserRepository,
 } from '../../../users/domain/user.repository';
+import { TrainerAccessService } from '../../../links/application/trainer-access.service';
 import { SetAssigneesDto } from '../dto/set-assignees.dto';
 import { PushService } from '../../../push/application/push.service';
+import { assertWorkoutOwnership } from '../workout-ownership';
 
 /**
- * E1.1 — define PRA QUEM o treino é. Recebe o conjunto completo (idempotente),
- * valida que todos são TRAINEE existentes e avisa por push quem entrou agora.
+ * E1.1 — define PRA QUEM o treino é. Valida ownership do treino, que todos são TRAINEE
+ * existentes com vínculo ACTIVE com o personal, e avisa por push quem entrou agora.
  */
 @Injectable()
 export class SetAssigneesUseCase {
@@ -28,11 +31,13 @@ export class SetAssigneesUseCase {
     @Inject(USER_REPOSITORY)
     private readonly users: UserRepository,
     private readonly push: PushService,
+    @Optional() private readonly trainerAccess?: TrainerAccessService,
   ) {}
 
-  async execute(workoutId: string, dto: SetAssigneesDto) {
+  async execute(workoutId: string, dto: SetAssigneesDto, trainerId?: string) {
     const workout = await this.workouts.findByIdWithExercises(workoutId);
     if (!workout) throw new NotFoundException('Treino não encontrado');
+    assertWorkoutOwnership(workout, trainerId);
 
     const wanted = Array.from(new Set(dto.userIds));
     if (wanted.length) {
@@ -43,8 +48,12 @@ export class SetAssigneesUseCase {
       );
       if (invalid.length) {
         throw new BadRequestException(
-          'Só alunos (TRAINEE) existentes podem receber treino: ' + invalid.join(', '),
+          'Só alunos (TRAINEE) existentes podem receber treino: ' +
+            invalid.join(', '),
         );
+      }
+      if (trainerId && this.trainerAccess) {
+        await this.trainerAccess.assertAllActiveLinks(trainerId, wanted);
       }
     }
 

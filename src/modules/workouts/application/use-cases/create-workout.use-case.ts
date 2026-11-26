@@ -12,7 +12,7 @@ export class CreateWorkoutUseCase {
     private readonly repo: WorkoutRepository,
   ) {}
 
-  execute(dto: CreateWorkoutDto) {
-    return this.repo.create(dto);
+  execute(dto: CreateWorkoutDto, ownerTrainerId?: string) {
+    return this.repo.create({ ...dto, ownerTrainerId });
   }
 }

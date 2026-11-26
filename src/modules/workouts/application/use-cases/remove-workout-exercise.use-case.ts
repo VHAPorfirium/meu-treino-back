@@ -8,6 +8,7 @@ import {
   WORKOUT_REPOSITORY,
   WorkoutRepository,
 } from '../../domain/workout.repository';
+import { assertWorkoutOwnership } from '../workout-ownership';
 
 @Injectable()
 export class RemoveWorkoutExerciseUseCase {
@@ -16,7 +17,17 @@ export class RemoveWorkoutExerciseUseCase {
     private readonly repo: WorkoutRepository,
   ) {}
 
-  async execute(workoutId: string, workoutExerciseId: string) {
+  async execute(
+    workoutId: string,
+    workoutExerciseId: string,
+    trainerId?: string,
+  ) {
+    if (trainerId) {
+      const workout = await this.repo.findById(workoutId);
+      if (!workout) throw new NotFoundException('Treino não encontrado');
+      assertWorkoutOwnership(workout, trainerId);
+    }
+
     const we = await this.repo.findExerciseInWorkout(workoutId, workoutExerciseId);
     if (!we) throw new NotFoundException('Exercício não encontrado neste treino');
 

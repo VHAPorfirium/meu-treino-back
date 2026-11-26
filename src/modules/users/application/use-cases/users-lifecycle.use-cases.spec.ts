@@ -41,6 +41,9 @@ function makeInMemoryRepo(initial: User[] = []): UserRepository {
       }
       return null;
     },
+    async findManyByCpfHash(cpfHash) {
+      return Array.from(store.values()).filter((u) => u.cpfHash === cpfHash);
+    },
     async findByUsername(username) {
       for (const u of store.values()) {
         if (u.username === username) return u;
@@ -360,5 +363,182 @@ describe('Users lifecycle use-cases (Fase 1)', () => {
 
     const onlyActive = await listUsers.execute(Role.TRAINEE, true);
     expect(onlyActive.map((u) => u.id)).toEqual(['u-active']);
+  });
+
+  it('permite mesmo CPF para PERSONAL e TRAINEE, mas exige CPF exclusivo para ADMIN', async () => {
+    const repo = makeInMemoryRepo();
+    const security = { event: jest.fn() } as unknown as SecurityLogger;
+    const createUser = new CreateTraineeUseCase(repo, crypto, security);
+    const adminCtx = { ...ACTOR_CTX, actorRole: Role.ADMIN };
+
+    const personal = await createUser.execute(
+      {
+        name: 'Victor Personal',
+        cpf: CPF_1,
+        password: 'Treino@2026',
+        username: 'victor.personal',
+        role: Role.PERSONAL,
+      },
+      adminCtx,
+    );
+    expect(personal.role).toBe(Role.PERSONAL);
+
+    // Mesmo CPF agora como TRAINEE -> PERMITIDO!
+    const trainee = await createUser.execute(
+      {
+        name: 'Victor Aluno',
+        cpf: CPF_1,
+        password: 'Treino@2026',
+        username: 'victor.aluno',
+        role: Role.TRAINEE,
+      },
+      adminCtx,
+    );
+    expect(trainee.role).toBe(Role.TRAINEE);
+
+    // Mesmo CPF tentando criar um 2º TRAINEE -> 409
+    await expect(
+      createUser.execute(
+        { name: 'Outro', cpf: CPF_1, password: 'Treino@2026', role: Role.TRAINEE },
+        adminCtx,
+      ),
+    ).rejects.toThrow(ConflictException);
+
+    // Mesmo CPF tentando criar ADMIN -> 409 (ADMIN é exclusivo)
+    await expect(
+      createUser.execute(
+        { name: 'Admin Dup', cpf: CPF_1, password: 'Treino@2026', role: Role.ADMIN },
+        adminCtx,
+      ),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it('aplica travas estritas anti-escalonamento para RECEPTION e encerra vínculos ao desligar PERSONAL', async () => {
+    const repo = makeInMemoryRepo([
+      {
+        id: 'u-adm',
+        name: 'Admin',
+        username: 'admin',
+        cpfHash: null,
+        cpfEncrypted: null,
+        role: Role.ADMIN,
+        pinHash: 'h',
+        active: true,
+        mustChangePassword: false,
+        createdAt: new Date(),
+      },
+      {
+        id: 'u-rec',
+        name: 'Portaria',
+        username: 'portaria',
+        cpfHash: null,
+        cpfEncrypted: null,
+        role: Role.RECEPTION,
+        pinHash: 'h',
+        active: true,
+        mustChangePassword: false,
+        createdAt: new Date(),
+      },
+      {
+        id: 'u-pers',
+        name: 'Personal A',
+        username: 'personal.a',
+        cpfHash: null,
+        cpfEncrypted: null,
+        role: Role.PERSONAL,
+        pinHash: 'h',
+        active: true,
+        mustChangePassword: false,
+        createdAt: new Date(),
+      },
+      {
+        id: 'u-alun',
+        name: 'Aluno A',
+        username: 'aluno.a',
+        cpfHash: crypto.hashCpf(CPF_2),
+        cpfEncrypted: crypto.encryptCpf(CPF_2, 'u-alun'),
+        role: Role.TRAINEE,
+        pinHash: 'h',
+        active: true,
+        mustChangePassword: false,
+        createdAt: new Date(),
+      },
+    ]);
+
+    const cache = { invalidate: jest.fn() } as unknown as UserStatusCacheService;
+    const security = { event: jest.fn() } as unknown as SecurityLogger;
+    const trainerAccess = {
+      getActiveTraineeIds: jest.fn().mockResolvedValue(['u-alun']),
+      endAllLinksForTrainer: jest.fn().mockResolvedValue(2),
+    };
+    const receptionCtx = {
+      actorUserId: 'u-rec',
+      actorRole: Role.RECEPTION,
+      ip: '127.0.0.1',
+    };
+
+    const createUser = new CreateTraineeUseCase(repo, crypto, security);
+    const updateUser = new UpdateUserUseCase(repo, crypto, cache, security);
+    const setActive = new SetUserActiveUseCase(
+      repo,
+      crypto,
+      cache,
+      security,
+      trainerAccess as never,
+    );
+    const resetPwd = new ResetUserPasswordUseCase(repo, crypto, cache, security);
+    const listUsers = new ListUsersUseCase(repo, crypto, trainerAccess as never);
+
+    // RECEPTION não cria PERSONAL nem ADMIN
+    await expect(
+      createUser.execute(
+        { name: 'P2', cpf: CPF_1, password: 'Treino@2026', role: Role.PERSONAL },
+        receptionCtx,
+      ),
+    ).rejects.toThrow('A Portaria só pode cadastrar contas de alunos');
+
+    // RECEPTION não edita PERSONAL nem ADMIN
+    await expect(
+      updateUser.execute('u-adm', { name: 'Hack' }, receptionCtx),
+    ).rejects.toThrow('A Portaria só pode atualizar dados cadastrais de alunos');
+
+    // RECEPTION não desativa nem reseta senha de ADMIN ou outro RECEPTION
+    await expect(
+      setActive.execute('u-adm', { active: false }, receptionCtx),
+    ).rejects.toThrow('A Portaria não pode alterar contas administrativas ou de portaria');
+    await expect(
+      resetPwd.execute('u-adm', { newPassword: 'TempReset@99' }, receptionCtx),
+    ).rejects.toThrow('A Portaria só pode redefinir senhas de alunos e personais');
+
+    // RECEPTION PODE desativar PERSONAL -> encerra todos os vínculos com TRAINER_DEACTIVATED
+    const deactivatedPersonal = await setActive.execute(
+      'u-pers',
+      { active: false },
+      receptionCtx,
+    );
+    expect(deactivatedPersonal.active).toBe(false);
+    expect(trainerAccess.endAllLinksForTrainer).toHaveBeenCalledWith(
+      'u-pers',
+      'TRAINER_DEACTIVATED',
+    );
+
+    // RECEPTION NÃO pode reativar PERSONAL (apenas ADMIN)
+    await expect(
+      setActive.execute('u-pers', { active: true }, receptionCtx),
+    ).rejects.toThrow('Apenas o administrador pode reativar contas de personal');
+
+    // ListUsers: RECEPTION não vê ADMIN/RECEPTION; PERSONAL só vê vinculados sem CPF mascarado
+    const recList = await listUsers.execute(undefined, undefined, {
+      userId: 'u-rec',
+      role: Role.RECEPTION,
+    });
+    expect(recList.map((u) => u.id).sort()).toEqual(['u-alun', 'u-pers']);
+
+    const persList = await listUsers.execute(Role.TRAINEE, undefined, {
+      userId: 'u-pers',
+      role: Role.PERSONAL,
+    });
+    expect(persList).toHaveLength(1);
+    expect(persList[0]).toMatchObject({ id: 'u-alun', cpfMasked: null });
   });
 });

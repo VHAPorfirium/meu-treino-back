@@ -61,6 +61,7 @@ export interface WorkoutLogRepository {
     userId: string,
     workoutId: string,
     dayKey: string,
+    programAssignmentId?: string | null,
   ): Promise<WorkoutLogWithEntries>;
 
   findById(id: string): Promise<WorkoutLog | null>;
@@ -73,9 +74,9 @@ export interface WorkoutLogRepository {
 
   complete(id: string): Promise<WorkoutLog>;
 
-  history(opts?: { limit?: number; offset?: number }): Promise<any[]>;
+  history(opts?: { limit?: number; offset?: number; userIds?: string[] }): Promise<any[]>;
 
-  countHistory(): Promise<number>;
+  countHistory(userIds?: string[]): Promise<number>;
 
   historyByUser(
     userId: string,
@@ -97,11 +98,17 @@ export interface WorkoutLogRepository {
   /** Todas as vezes que o aluno fez o exercício (feito ou como substituto), em ordem cronológica. */
   listExercisePerformances(userId: string, exerciseId: string): Promise<ExercisePerformanceRecord[]>;
 
-  /** Treino direcionado ao usuário (autorização de sessão e última performance). */
+  /** Treino direcionado ao usuário (autorização de sessão e vínculo ao programa ativo). */
   findAssignedWorkout(
     userId: string,
     workoutId: string,
-  ): Promise<{ id: string; active: boolean } | null>;
+  ): Promise<{ id: string; active: boolean; programId?: string | null } | null>;
+
+  /** Retorna o ID da participação ACTIVE do aluno no programa do treino (quando houver). */
+  findActiveProgramAssignmentId?(
+    userId: string,
+    programId: string,
+  ): Promise<string | null>;
 
   /** Confirma se o exercício prescrito pertence ao treino da sessão. */
   workoutExerciseBelongsToWorkout(
@@ -112,6 +119,6 @@ export interface WorkoutLogRepository {
   /** Confirma se o exercício substituto existe no catálogo. */
   exerciseExists(exerciseId: string): Promise<boolean>;
 
-  /** Último treino concluído e exercício mais pulado de cada aluno (TRAINEE). */
-  listTraineeActivities(skippedSince: Date): Promise<TraineeActivity[]>;
+  /** Último treino concluído e exercício mais pulado de cada aluno (TRAINEE) da carteira. */
+  listTraineeActivities(skippedSince: Date, userIds?: string[]): Promise<TraineeActivity[]>;
 }
