@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { ProgramStatus, Role } from '@prisma/client';
 import {
   PROGRAM_REPOSITORY,
   ProgramRepository,
@@ -21,8 +21,10 @@ import { diaLocal } from '../../../../shared/time/dia-local';
  * Coloca alunos num programa.
  *
  * Regra: cada aluno está em no máximo UM programa por vez. Se ele já estiver em
- * outro, a participação anterior é arquivada (e os treinos dela saem da lista
- * dele) antes de entrar no novo. Quem já está neste mesmo programa é ignorado.
+ * outro (ou tiver concluído uma rodada anterior), a participação anterior é
+ * arquivada — preservando o relatório/conquista se ela foi concluída — e os
+ * treinos dela saem da lista antes de entrar no novo. Quem já está ATIVO neste
+ * mesmo programa é ignorado.
  */
 @Injectable()
 export class AssignProgramToUsersUseCase {
@@ -44,7 +46,12 @@ export class AssignProgramToUsersUseCase {
     const newParticipantIds: string[] = [];
     for (const userId of uniqueUserIds) {
       const currentAssignment = await this.programRepository.findCurrentAssignmentByUser(userId);
-      if (currentAssignment?.programId === programId) continue;
+      if (
+        currentAssignment?.programId === programId &&
+        currentAssignment.status === ProgramStatus.ACTIVE
+      ) {
+        continue;
+      }
       if (currentAssignment) await this.programRepository.archiveAssignment(currentAssignment.id);
       newParticipantIds.push(userId);
     }
