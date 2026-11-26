@@ -1,6 +1,6 @@
 {
   "name": "meu-treino-back",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "API do app de treino (NestJS + Prisma, Clean Architecture)",
   "author": "Victor Hugo",
   "private": true,
