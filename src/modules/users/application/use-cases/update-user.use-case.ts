@@ -1,10 +1,12 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Role } from '@prisma/client';
 import { UserStatusCacheService } from '../../../../shared/auth/user-status-cache.service';
 import { CryptoService } from '../../../../shared/security/crypto.service';
 import { SecurityLogger } from '../../../../shared/security/security-logger';
@@ -21,7 +23,7 @@ import {
   UserRepository,
 } from '../../domain/user.repository';
 import { UpdateUserDto } from '../dto/update-user.dto';
-import { AuditActorContext } from '../username-generator';
+import { assertCpfRoleAllowed, AuditActorContext } from '../username-generator';
 import { toUserSummary, UserSummary } from './list-users.use-case';
 
 @Injectable()
@@ -42,6 +44,23 @@ export class UpdateUserUseCase {
     const target = await this.users.findById(userId);
     if (!target) {
       throw new NotFoundException('Usuário não encontrado');
+    }
+
+    if (ctx.actorRole === Role.RECEPTION && target.role !== Role.TRAINEE) {
+      this.security.event('authz.denied', {
+        ip: ctx.ip,
+        userAgent: ctx.userAgent,
+        requestId: ctx.requestId,
+        userId: ctx.actorUserId,
+        role: ctx.actorRole,
+        method: 'PATCH',
+        path: `/api/users/${target.id}`,
+        statusCode: 403,
+        reason: 'reception_cannot_edit_non_trainee',
+      });
+      throw new ForbiddenException(
+        'A Portaria só pode atualizar dados cadastrais de alunos',
+      );
     }
 
     const patch: UpdateUserInput = {};
@@ -80,12 +99,8 @@ export class UpdateUserUseCase {
       }
       const cpfHash = this.crypto.hashCpf(digits);
       if (cpfHash !== target.cpfHash) {
-        const taken = await this.users.findByCpfHash(cpfHash);
-        if (taken && taken.id !== target.id) {
-          throw new ConflictException(
-            'Já existe uma conta cadastrada com este CPF',
-          );
-        }
+        const existingSameCpf = await this.users.findManyByCpfHash(cpfHash);
+        assertCpfRoleAllowed(existingSameCpf, target.role, target.id);
         patch.cpfHash = cpfHash;
         patch.cpfEncrypted = this.crypto.encryptCpf(digits, target.id);
         identifierMasked = maskCpf(digits);
@@ -120,7 +135,7 @@ export class UpdateUserUseCase {
         const targetField = String(prismaErr.meta?.target ?? '');
         if (targetField.includes('cpfHash')) {
           throw new ConflictException(
-            'Já existe uma conta cadastrada com este CPF',
+            'Já existe uma conta deste perfil cadastrada com este CPF',
           );
         }
         throw new ConflictException('Esse apelido já está em uso');

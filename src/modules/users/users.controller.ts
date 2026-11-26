@@ -38,10 +38,14 @@ export class UsersController {
     private readonly resetUserPasswordUseCase: ResetUserPasswordUseCase,
   ) {}
 
-  // GET /api/users?role=TRAINEE&active=true  (ADMIN)
-  @Roles(Role.ADMIN)
+  // GET /api/users?role=TRAINEE&active=true  (ADMIN | RECEPTION | PERSONAL)
+  @Roles(Role.ADMIN, Role.RECEPTION, Role.PERSONAL)
   @Get()
-  list(@Query('role') role?: string, @Query('active') active?: string) {
+  list(
+    @CurrentUser() actor: AuthUser,
+    @Query('role') role?: string,
+    @Query('active') active?: string,
+  ) {
     if (role !== undefined && !Object.values(Role).includes(role as Role)) {
       throw new BadRequestException('role inválido');
     }
@@ -51,18 +55,21 @@ export class UsersController {
       else if (active === 'false') activeFilter = false;
       else throw new BadRequestException('active inválido');
     }
-    return this.listUsers.execute(role as Role | undefined, activeFilter);
+    return this.listUsers.execute(role as Role | undefined, activeFilter, {
+      userId: actor.userId,
+      role: actor.role,
+    });
   }
 
-  // GET /api/users/suggest-username?name=Gabriel+Silva  (ADMIN)
-  @Roles(Role.ADMIN)
+  // GET /api/users/suggest-username?name=Gabriel+Silva  (ADMIN | RECEPTION)
+  @Roles(Role.ADMIN, Role.RECEPTION)
   @Get('suggest-username')
   suggestUsername(@Query('name') name: string) {
     return this.suggestUsernameUseCase.execute(name);
   }
 
-  // POST /api/users { name, cpf, password, username? }  (ADMIN)
-  @Roles(Role.ADMIN)
+  // POST /api/users { name, cpf, password, username?, role? }  (ADMIN | RECEPTION)
+  @Roles(Role.ADMIN, Role.RECEPTION)
   @Post()
   create(
     @CurrentUser() actor: AuthUser,
@@ -71,14 +78,15 @@ export class UsersController {
   ) {
     return this.createTrainee.execute(createTraineeDto, {
       actorUserId: actor.userId,
+      actorRole: actor.role,
       ip: clientIp(req),
       userAgent: userAgent(req),
       requestId: requestId(req),
     });
   }
 
-  // PATCH /api/users/:id { name?, username?, cpf? }  (ADMIN)
-  @Roles(Role.ADMIN)
+  // PATCH /api/users/:id { name?, username?, cpf? }  (ADMIN | RECEPTION)
+  @Roles(Role.ADMIN, Role.RECEPTION)
   @Patch(':id')
   update(
     @CurrentUser() actor: AuthUser,
@@ -88,14 +96,15 @@ export class UsersController {
   ) {
     return this.updateUserUseCase.execute(id, dto, {
       actorUserId: actor.userId,
+      actorRole: actor.role,
       ip: clientIp(req),
       userAgent: userAgent(req),
       requestId: requestId(req),
     });
   }
 
-  // PATCH /api/users/:id/status { active }  (ADMIN)
-  @Roles(Role.ADMIN)
+  // PATCH /api/users/:id/status { active }  (ADMIN | RECEPTION)
+  @Roles(Role.ADMIN, Role.RECEPTION)
   @Patch(':id/status')
   setStatus(
     @CurrentUser() actor: AuthUser,
@@ -105,14 +114,15 @@ export class UsersController {
   ) {
     return this.setUserActiveUseCase.execute(id, dto, {
       actorUserId: actor.userId,
+      actorRole: actor.role,
       ip: clientIp(req),
       userAgent: userAgent(req),
       requestId: requestId(req),
     });
   }
 
-  // POST /api/users/:id/reset-password { newPassword }  (ADMIN)
-  @Roles(Role.ADMIN)
+  // POST /api/users/:id/reset-password { newPassword }  (ADMIN | RECEPTION)
+  @Roles(Role.ADMIN, Role.RECEPTION)
   @Post(':id/reset-password')
   @HttpCode(200)
   resetPassword(
@@ -123,6 +133,7 @@ export class UsersController {
   ) {
     return this.resetUserPasswordUseCase.execute(id, dto, {
       actorUserId: actor.userId,
+      actorRole: actor.role,
       ip: clientIp(req),
       userAgent: userAgent(req),
       requestId: requestId(req),
