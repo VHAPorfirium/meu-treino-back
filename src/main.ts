@@ -38,7 +38,7 @@ async function bootstrap() {
   app.enableCors({
     origin: corsOrigins.length > 0 ? corsOrigins : 'http://localhost:3001',
     credentials: true,
-    exposedHeaders: ['x-request-id'],
+    exposedHeaders: ['x-request-id', 'x-total-count'],
   });
 
   app.useGlobalPipes(
