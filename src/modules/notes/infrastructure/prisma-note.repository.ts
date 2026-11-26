@@ -9,7 +9,12 @@ const FROM = { from: { select: { id: true, name: true } } };
 export class PrismaNoteRepository implements NoteRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  create(data: { fromId: string; toId: string; text: string }): Promise<NoteWithFrom> {
+  create(data: {
+    fromId: string;
+    toId: string;
+    text: string;
+    trainerLinkId?: string | null;
+  }): Promise<NoteWithFrom> {
     return this.prisma.trainerNote.create({ data, include: FROM });
   }
 
@@ -24,6 +29,19 @@ export class PrismaNoteRepository implements NoteRepository {
 
   listSentTo(toId: string, limit: number): Promise<NoteWithFrom[]> {
     return this.listForUser(toId, limit);
+  }
+
+  listByTrainerLink(
+    toId: string,
+    trainerLinkId: string,
+    limit: number,
+  ): Promise<NoteWithFrom[]> {
+    return this.prisma.trainerNote.findMany({
+      where: { toId, trainerLinkId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      include: FROM,
+    });
   }
 
   findById(id: string): Promise<TrainerNote | null> {

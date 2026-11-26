@@ -49,4 +49,41 @@ describe('ListPhotosUseCase — assinatura em lote', () => {
     expect(await useCase.execute('u1')).toEqual([]);
     expect(storage.signedReadUrls).not.toHaveBeenCalled();
   });
+
+  it('isola fotos por trainerLinkId na visão do personal (Personal B só vê fotos do vínculo atual)', async () => {
+    const prisma = {
+      progressPhoto: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'p-link-b',
+            userId: 'u-aluna',
+            path: 'u-aluna/nova.jpg',
+            takenAt: new Date('2026-11-26'),
+            note: null,
+            trainerLinkId: 'link-b',
+          },
+        ]),
+      },
+    } as unknown as PrismaService;
+    const storage = {
+      signedReadUrls: jest
+        .fn()
+        .mockResolvedValue(new Map([['u-aluna/nova.jpg', 'https://signed/nova']])),
+    } as unknown as SupabaseStorageService;
+    const trainerAccess = {
+      assertActiveLink: jest.fn().mockResolvedValue({ id: 'link-b' }),
+    };
+
+    const useCase = new ListPhotosUseCase(prisma, storage, trainerAccess as never);
+    const res = await useCase.executeForTrainer('personal-b', 'u-aluna');
+
+    expect(trainerAccess.assertActiveLink).toHaveBeenCalledWith('personal-b', 'u-aluna');
+    expect(prisma.progressPhoto.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: 'u-aluna', trainerLinkId: 'link-b' },
+      }),
+    );
+    expect(res).toHaveLength(1);
+    expect(res[0].id).toBe('p-link-b');
+  });
 });

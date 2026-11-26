@@ -52,8 +52,13 @@ export class OpenSessionUseCase {
       throw new BadRequestException('Este treino está inativo');
     }
 
+    const programAssignmentId =
+      assigned.programId && this.repo.findActiveProgramAssignmentId
+        ? await this.repo.findActiveProgramAssignmentId(userId, assigned.programId)
+        : null;
+
     try {
-      const opened = await this.repo.open(userId, workoutId, dayKey);
+      const opened = await this.repo.open(userId, workoutId, dayKey, programAssignmentId);
       await invalidarProgresso(this.cache, userId);
       return opened;
     } catch (err) {

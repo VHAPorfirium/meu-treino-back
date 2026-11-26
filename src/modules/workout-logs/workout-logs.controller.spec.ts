@@ -32,7 +32,17 @@ describe('WorkoutLogsController — X-Total-Count em history e my-history', () =
     const setHeader = jest.fn();
     const res = { setHeader } as unknown as Response;
 
-    const result = await controller.getHistory({ limit: 50, offset: 0 }, res);
+    const result = await controller.getHistory(
+      {
+        userId: 'u-personal',
+        role: Role.PERSONAL,
+        name: 'Personal',
+        username: 'personal',
+        mustChangePassword: false,
+      },
+      { limit: 50, offset: 0 },
+      res,
+    );
 
     expect(result).toBe(items);
     expect(repo.history).toHaveBeenCalledWith({ limit: 50, offset: 0 });

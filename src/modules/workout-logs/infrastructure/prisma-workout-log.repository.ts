@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { ExerciseStatus, Prisma, Role, WorkoutLog } from '@prisma/client';
+import {
+  ExerciseStatus,
+  Prisma,
+  ProgramStatus,
+  Role,
+  WorkoutLog,
+} from '@prisma/client';
 import { PrismaService } from '../../../shared/prisma/prisma.service';
 import {
   LastPerformanceRecord,
@@ -64,9 +70,15 @@ export class PrismaWorkoutLogRepository implements WorkoutLogRepository {
     userId: string,
     workoutId: string,
     dayKey: string,
+    programAssignmentId?: string | null,
   ): Promise<WorkoutLogWithEntries> {
     return this.prisma.workoutLog.create({
-      data: { userId, workoutId, dayKey },
+      data: {
+        userId,
+        workoutId,
+        dayKey,
+        ...(programAssignmentId ? { programAssignmentId } : {}),
+      },
       include: ENTRIES_INCLUDE,
     });
   }
@@ -134,8 +146,10 @@ export class PrismaWorkoutLogRepository implements WorkoutLogRepository {
     return this.prisma.workoutLog.count({ where: { userId } });
   }
 
-  history(opts?: { limit?: number; offset?: number }): Promise<any[]> {
+  history(opts?: { limit?: number; offset?: number; userIds?: string[] }): Promise<any[]> {
+    if (opts?.userIds && opts.userIds.length === 0) return Promise.resolve([]);
     return this.prisma.workoutLog.findMany({
+      where: opts?.userIds ? { userId: { in: opts.userIds } } : undefined,
       orderBy: { date: 'desc' },
       take: clampHistoryLimit(opts?.limit),
       skip: Math.max(0, Math.trunc(opts?.offset ?? 0)),
@@ -143,18 +157,32 @@ export class PrismaWorkoutLogRepository implements WorkoutLogRepository {
     });
   }
 
-  countHistory(): Promise<number> {
-    return this.prisma.workoutLog.count();
+  countHistory(userIds?: string[]): Promise<number> {
+    if (userIds && userIds.length === 0) return Promise.resolve(0);
+    return this.prisma.workoutLog.count({
+      where: userIds ? { userId: { in: userIds } } : undefined,
+    });
   }
 
   findAssignedWorkout(
     userId: string,
     workoutId: string,
-  ): Promise<{ id: string; active: boolean } | null> {
+  ): Promise<{ id: string; active: boolean; programId: string | null } | null> {
     return this.prisma.workout.findFirst({
       where: { id: workoutId, assignments: { some: { userId } } },
-      select: { id: true, active: true },
+      select: { id: true, active: true, programId: true },
     });
+  }
+
+  async findActiveProgramAssignmentId(
+    userId: string,
+    programId: string,
+  ): Promise<string | null> {
+    const found = await this.prisma.programAssignment.findFirst({
+      where: { userId, programId, status: ProgramStatus.ACTIVE },
+      select: { id: true },
+    });
+    return found?.id ?? null;
   }
 
   async workoutExerciseBelongsToWorkout(
@@ -266,18 +294,38 @@ export class PrismaWorkoutLogRepository implements WorkoutLogRepository {
     });
   }
 
-  async listTraineeActivities(skippedSince: Date): Promise<TraineeActivity[]> {
+  async listTraineeActivities(
+    skippedSince: Date,
+    userIds?: string[],
+  ): Promise<TraineeActivity[]> {
+    if (userIds && userIds.length === 0) return [];
+
     const trainees = await this.prisma.user.findMany({
-      where: { role: Role.TRAINEE },
+      where: {
+        role: Role.TRAINEE,
+        active: true,
+        ...(userIds ? { id: { in: userIds } } : {}),
+      },
       select: {
         id: true,
         name: true,
-        workoutLogs: { where: { completed: true }, orderBy: { date: 'desc' }, take: 1, select: { date: true } },
+        workoutLogs: {
+          where: { completed: true },
+          orderBy: { date: 'desc' },
+          take: 1,
+          select: { date: true },
+        },
       },
     });
 
     const skippedLogs = await this.prisma.workoutExerciseLog.findMany({
-      where: { status: ExerciseStatus.SKIPPED, workoutLog: { date: { gte: skippedSince } } },
+      where: {
+        status: ExerciseStatus.SKIPPED,
+        workoutLog: {
+          date: { gte: skippedSince },
+          ...(userIds ? { userId: { in: userIds } } : {}),
+        },
+      },
       select: {
         workoutLog: { select: { userId: true } },
         workoutExercise: { select: { exercise: { select: { name: true, namePt: true } } } },

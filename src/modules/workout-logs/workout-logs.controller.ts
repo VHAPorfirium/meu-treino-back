@@ -42,14 +42,14 @@ export class WorkoutLogsController {
   ) {}
 
   // POST /api/workout-logs  { workoutId }  (TRAINEE) — abre/retoma sessão do dia
-  @Roles(Role.TRAINEE, Role.ADMIN)
+  @Roles(Role.TRAINEE)
   @Post()
   open(@CurrentUser() user: AuthUser, @Body() dto: OpenSessionDto) {
     return this.openSession.execute(user.userId, dto.workoutId);
   }
 
   // PATCH /api/workout-logs/:id/exercises/:weId  (TRAINEE)
-  @Roles(Role.TRAINEE, Role.ADMIN)
+  @Roles(Role.TRAINEE)
   @Patch(':id/exercises/:weId')
   patch(
     @CurrentUser() user: AuthUser,
@@ -61,14 +61,14 @@ export class WorkoutLogsController {
   }
 
   // PATCH /api/workout-logs/:id/complete  (TRAINEE)
-  @Roles(Role.TRAINEE, Role.ADMIN)
+  @Roles(Role.TRAINEE)
   @Patch(':id/complete')
   complete(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.completeSession.execute(user.userId, id);
   }
 
   // GET /api/workout-logs/last-performance?workoutId=  — "última vez" + sugestão de carga
-  @Roles(Role.TRAINEE, Role.ADMIN)
+  @Roles(Role.TRAINEE)
   @Get('last-performance')
   lastPerformance(
     @CurrentUser() user: AuthUser,
@@ -78,33 +78,37 @@ export class WorkoutLogsController {
   }
 
   // GET /api/workout-logs/exercise-stats/:exerciseId — números do aluno no exercício
-  @Roles(Role.TRAINEE, Role.ADMIN)
+  @Roles(Role.TRAINEE)
   @Get('exercise-stats/:exerciseId')
-  exerciseStats(@CurrentUser() user: AuthUser, @Param('exerciseId') exerciseId: string) {
+  exerciseStats(
+    @CurrentUser() user: AuthUser,
+    @Param('exerciseId') exerciseId: string,
+  ) {
     return this.getExerciseStats.execute(user.userId, exerciseId);
   }
 
-  // GET /api/workout-logs/attention  (ADMIN) — "Precisa de atenção" do dashboard
-  @Roles(Role.ADMIN)
+  // GET /api/workout-logs/attention  (PERSONAL) — "Precisa de atenção" dos alunos vinculados
+  @Roles(Role.PERSONAL)
   @Get('attention')
-  attention() {
-    return this.listAttentionItems.execute();
+  attention(@CurrentUser() trainer: AuthUser) {
+    return this.listAttentionItems.execute(trainer.userId);
   }
 
-  // GET /api/workout-logs/history?limit=&offset=  (ADMIN) — retorna array + header X-Total-Count
-  @Roles(Role.ADMIN)
+  // GET /api/workout-logs/history?limit=&offset=  (PERSONAL) — histórico dos alunos vinculados
+  @Roles(Role.PERSONAL)
   @Get('history')
   async getHistory(
+    @CurrentUser() trainer: AuthUser,
     @Query() query: HistoryQueryDto,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { items, total } = await this.history.execute(query);
+    const { items, total } = await this.history.execute(query, trainer.userId);
     res.setHeader('X-Total-Count', String(total));
     return items;
   }
 
   // GET /api/workout-logs/my-history?limit=&offset=  (TRAINEE) — histórico da própria aluna + X-Total-Count
-  @Roles(Role.TRAINEE, Role.ADMIN)
+  @Roles(Role.TRAINEE)
   @Get('my-history')
   async getMyHistory(
     @CurrentUser() user: AuthUser,
@@ -116,11 +120,13 @@ export class WorkoutLogsController {
     return items;
   }
 
-  // GET /api/workout-logs/progress-summary?userId=  (ADMIN)
-  // Sem `userId` = agregado de todos os alunos; com `userId` = só aquele aluno.
-  @Roles(Role.ADMIN)
+  // GET /api/workout-logs/progress-summary?userId=  (PERSONAL)
+  @Roles(Role.PERSONAL)
   @Get('progress-summary')
-  getProgress(@Query('userId') userId?: string) {
-    return this.progress.execute(userId?.trim() || undefined);
+  getProgress(
+    @CurrentUser() trainer: AuthUser,
+    @Query('userId') userId?: string,
+  ) {
+    return this.progress.execute(userId?.trim() || undefined, trainer.userId);
   }
 }
