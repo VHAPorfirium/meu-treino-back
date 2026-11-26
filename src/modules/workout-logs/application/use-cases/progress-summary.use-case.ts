@@ -6,17 +6,11 @@ import {
   WorkoutLogRepository,
 } from '../../domain/workout-log.repository';
 import { CacheService, TTL } from '../../../../shared/cache/cache.service';
-
-const DAY = 24 * 60 * 60 * 1000;
-const dayKey = (d: Date) => new Date(d).toISOString().slice(0, 10);
-
-function weekKey(d: Date): string {
-  const date = new Date(d);
-  date.setHours(0, 0, 0, 0);
-  const day = (date.getDay() + 6) % 7; // segunda = início
-  date.setDate(date.getDate() - day);
-  return date.toISOString().slice(0, 10);
-}
+import {
+  diaLocal,
+  inicioDaSemanaLocal,
+  somarDias,
+} from '../../../../shared/time/dia-local';
 
 @Injectable()
 export class ProgressSummaryUseCase {
@@ -50,15 +44,16 @@ export class ProgressSummaryUseCase {
     );
   }
 
-  private async calcular(userId?: string) {
-    const now = new Date();
-    const since90 = new Date(now.getTime() - 90 * DAY);
-    const since30 = new Date(now.getTime() - 30 * DAY);
-    const since60 = new Date(now.getTime() - 60 * DAY);
+  async calcular(userId?: string, now: Date = new Date()) {
+    const todayKey = diaLocal(now);
+    const since90Key = somarDias(todayKey, -90);
+    const since56Key = somarDias(todayKey, -55);
+    const since30Key = somarDias(todayKey, -29); // últimos 30 dias locais (incluindo hoje)
+    const since60Key = somarDias(todayKey, -59); // janela de 30 dias locais imediatamente anterior
 
     const logs = await this.prisma.workoutLog.findMany({
-      where: { date: { gte: since90 }, ...(userId ? { userId } : {}) },
-      orderBy: { date: 'asc' },
+      where: { dayKey: { gte: since90Key }, ...(userId ? { userId } : {}) },
+      orderBy: [{ dayKey: 'asc' }, { date: 'asc' }],
       include: {
         exerciseLogs: {
           include: {
@@ -69,22 +64,25 @@ export class ProgressSummaryUseCase {
       },
     });
 
-    const inRange = (d: Date, from: Date, to: Date) =>
-      new Date(d) >= from && new Date(d) < to;
+    const logDay = (l: (typeof logs)[number]) => l.dayKey || diaLocal(l.date);
+    const inDayRange = (k: string, fromKey: string, toInclusiveKey: string) =>
+      k >= fromKey && k <= toInclusiveKey;
+    const prev30EndKey = somarDias(since30Key, -1);
 
     // ---------- frequência ----------
     const completed = logs.filter((l) => l.completed);
     const last30days = completed.filter((l) =>
-      inRange(l.date, since30, now),
+      inDayRange(logDay(l), since30Key, todayKey),
     ).length;
     const prev30 = completed.filter((l) =>
-      inRange(l.date, since60, since30),
+      inDayRange(logDay(l), since60Key, prev30EndKey),
     ).length;
 
     const byWeekMap: Record<string, number> = {};
     for (const l of completed) {
-      if (new Date(l.date) < new Date(now.getTime() - 56 * DAY)) continue;
-      const k = weekKey(l.date);
+      const d = logDay(l);
+      if (d < since56Key) continue;
+      const k = inicioDaSemanaLocal(d);
       byWeekMap[k] = (byWeekMap[k] ?? 0) + 1;
     }
     const byWeek = Object.entries(byWeekMap)
@@ -92,8 +90,8 @@ export class ProgressSummaryUseCase {
       .sort((a, b) => a.week.localeCompare(b.week));
 
     // ---------- aderência (DONE / total marcados) ----------
-    const logs30 = logs.filter((l) => inRange(l.date, since30, now));
-    const logs60 = logs.filter((l) => inRange(l.date, since60, since30));
+    const logs30 = logs.filter((l) => inDayRange(logDay(l), since30Key, todayKey));
+    const logs60 = logs.filter((l) => inDayRange(logDay(l), since60Key, prev30EndKey));
     const adher = (list: typeof logs) => {
       let done = 0;
       let total = 0;
@@ -113,11 +111,11 @@ export class ProgressSummaryUseCase {
       deltaPp: a30.pct - a60.pct,
     };
 
-    // ---------- sequência (streak de dias com sessão completa) ----------
-    const doneDays = new Set<string>(completed.map((l) => dayKey(l.date)));
+    // ---------- sequência (streak de dias locais com sessão completa) ----------
+    const doneDays = new Set<string>(completed.map(logDay));
     let current = 0;
-    for (let i = 0; ; i++) {
-      const d = dayKey(new Date(now.getTime() - i * DAY));
+    for (let i = 0; i <= doneDays.size + 1; i++) {
+      const d = somarDias(todayKey, -i);
       if (doneDays.has(d)) current++;
       else if (i === 0) continue; // hoje ainda pode não ter treinado
       else break;
@@ -126,13 +124,7 @@ export class ProgressSummaryUseCase {
     let run = 0;
     const sortedDays = [...doneDays].sort();
     for (let i = 0; i < sortedDays.length; i++) {
-      if (
-        i > 0 &&
-        new Date(sortedDays[i]).getTime() -
-          new Date(sortedDays[i - 1]).getTime() ===
-          DAY
-      )
-        run++;
+      if (i > 0 && somarDias(sortedDays[i - 1], 1) === sortedDays[i]) run++;
       else run = 1;
       best = Math.max(best, run);
     }
@@ -170,17 +162,17 @@ export class ProgressSummaryUseCase {
       deltaPct: c60 ? Math.round(((c30 - c60) / c60) * 100) : 0,
     };
 
-    // ---------- heatmap 30 dias ----------
+    // ---------- heatmap 30 dias locais ----------
     const dayStatus: Record<string, number> = {};
     for (const l of logs) {
-      if (!inRange(l.date, since30, new Date(now.getTime() + DAY))) continue;
-      const k = dayKey(l.date);
+      const k = logDay(l);
+      if (!inDayRange(k, since30Key, todayKey)) continue;
       const level = l.completed ? 3 : 2; // completo = verde, aberto/parcial = âmbar
       dayStatus[k] = Math.max(dayStatus[k] ?? 0, level);
     }
     const heatmap: { date: string; level: number }[] = [];
     for (let i = 29; i >= 0; i--) {
-      const k = dayKey(new Date(now.getTime() - i * DAY));
+      const k = somarDias(todayKey, -i);
       heatmap.push({ date: k, level: dayStatus[k] ?? 0 });
     }
 
@@ -192,6 +184,7 @@ export class ProgressSummaryUseCase {
     const notes: { text: string; exercise: string; date: string }[] = [];
 
     for (const l of logs) {
+      const k = logDay(l);
       for (const e of l.exerciseLogs) {
         const baseName = e.workoutExercise?.exercise?.name ?? '—';
         if (e.status === ExerciseStatus.SKIPPED)
@@ -207,7 +200,7 @@ export class ProgressSummaryUseCase {
               ? e.actualExercise.name
               : baseName;
           (loadByExercise[eff] ??= []).push({
-            date: dayKey(l.date),
+            date: k,
             loadUsed: e.loadUsed,
           });
         }
@@ -215,7 +208,7 @@ export class ProgressSummaryUseCase {
           notes.push({
             text: e.note,
             exercise: baseName,
-            date: dayKey(l.date),
+            date: k,
           });
       }
     }

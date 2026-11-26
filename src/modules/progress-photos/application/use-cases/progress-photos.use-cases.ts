@@ -9,7 +9,9 @@ import { SupabaseStorageService } from '../../../../shared/storage/supabase-stor
 import { RegisterPhotoDto, RequestUploadDto } from '../dto/progress-photo.dto';
 
 /** Bucket PRIVADO de fotos de progresso (criar no Supabase como "private"). */
-export const PROGRESS_BUCKET = process.env.SUPABASE_PROGRESS_BUCKET ?? 'progress';
+export function getProgressBucket(): string {
+  return process.env.SUPABASE_PROGRESS_BUCKET?.trim() || 'progress';
+}
 const READ_TTL_SEC = 60 * 60; // 1h
 
 /** Anexa URL assinada de leitura a cada foto. */
@@ -17,10 +19,11 @@ async function withUrls(
   storage: SupabaseStorageService,
   photos: { id: string; userId: string; path: string; takenAt: Date; note: string | null }[],
 ) {
+  const bucket = getProgressBucket();
   return Promise.all(
     photos.map(async (p) => ({
       ...p,
-      url: await storage.signedReadUrl(PROGRESS_BUCKET, p.path, READ_TTL_SEC),
+      url: await storage.signedReadUrl(bucket, p.path, READ_TTL_SEC),
     })),
   );
 }
@@ -32,7 +35,7 @@ export class RequestPhotoUploadUseCase {
 
   async execute(userId: string, dto: RequestUploadDto) {
     const path = `${userId}/${randomUUID()}.${dto.ext}`;
-    const upload = await this.storage.signedUploadUrl(PROGRESS_BUCKET, path);
+    const upload = await this.storage.signedUploadUrl(getProgressBucket(), path);
     return { path, uploadUrl: upload.signedUrl, token: upload.token };
   }
 }
@@ -88,7 +91,7 @@ export class DeletePhotoUseCase {
     if (!photo) throw new NotFoundException('Foto não encontrada');
     if (photo.userId !== userId) throw new ForbiddenException('Foto de outro usuário');
     await this.prisma.progressPhoto.delete({ where: { id: photoId } });
-    await this.storage.remove(PROGRESS_BUCKET, [photo.path]);
+    await this.storage.remove(getProgressBucket(), [photo.path]);
     return { ok: true };
   }
 }
