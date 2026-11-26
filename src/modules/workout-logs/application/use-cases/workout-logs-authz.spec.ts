@@ -36,10 +36,13 @@ function mockRepo(): jest.Mocked<WorkoutLogRepository> {
 
 describe('WorkoutLogs — autorização e validação', () => {
   describe('OpenSessionUseCase', () => {
+    const makeCache = () =>
+      ({ invalidarUsuario: jest.fn().mockResolvedValue(1) }) as unknown as jest.Mocked<CacheService>;
+
     it('rejeita (404) quando o treino não pertence ao usuário ou não existe', async () => {
       const repo = mockRepo();
       repo.findAssignedWorkout.mockResolvedValue(null);
-      const useCase = new OpenSessionUseCase(repo);
+      const useCase = new OpenSessionUseCase(repo, makeCache());
 
       await expect(useCase.execute('aluna-1', 'treino-alheio')).rejects.toThrow(NotFoundException);
       expect(repo.open).not.toHaveBeenCalled();
@@ -49,7 +52,7 @@ describe('WorkoutLogs — autorização e validação', () => {
       const repo = mockRepo();
       repo.findAssignedWorkout.mockResolvedValue({ id: 'w1', active: false });
       repo.findSessionOfDay.mockResolvedValue(null);
-      const useCase = new OpenSessionUseCase(repo);
+      const useCase = new OpenSessionUseCase(repo, makeCache());
 
       await expect(useCase.execute('aluna-1', 'w1')).rejects.toThrow(BadRequestException);
       expect(repo.open).not.toHaveBeenCalled();
@@ -62,9 +65,23 @@ describe('WorkoutLogs — autorização e validação', () => {
         id: 'log-1',
         completed: true,
       } as never);
-      const useCase = new OpenSessionUseCase(repo);
+      const useCase = new OpenSessionUseCase(repo, makeCache());
 
       await expect(useCase.execute('aluna-1', 'w1')).rejects.toThrow(ConflictException);
+    });
+
+    it('invalida o cache de progresso (aluno e all) ao abrir uma nova sessão', async () => {
+      const repo = mockRepo();
+      const cache = makeCache();
+      const created = { id: 'log-1', completed: false, exerciseLogs: [] } as never;
+      repo.findAssignedWorkout.mockResolvedValue({ id: 'w1', active: true });
+      repo.findSessionOfDay.mockResolvedValue(null);
+      repo.open.mockResolvedValue(created);
+      const useCase = new OpenSessionUseCase(repo, cache);
+
+      await expect(useCase.execute('aluna-1', 'w1')).resolves.toBe(created);
+      expect(cache.invalidarUsuario).toHaveBeenCalledWith('aluna-1');
+      expect(cache.invalidarUsuario).toHaveBeenCalledWith('all');
     });
 
     it('recupera corrida concorrente P2002 devolvendo a sessão já criada', async () => {
@@ -73,7 +90,7 @@ describe('WorkoutLogs — autorização e validação', () => {
       repo.findAssignedWorkout.mockResolvedValue({ id: 'w1', active: true });
       repo.findSessionOfDay.mockResolvedValueOnce(null).mockResolvedValueOnce(created);
       repo.open.mockRejectedValue({ code: 'P2002' });
-      const useCase = new OpenSessionUseCase(repo);
+      const useCase = new OpenSessionUseCase(repo, makeCache());
 
       await expect(useCase.execute('aluna-1', 'w1')).resolves.toBe(created);
     });

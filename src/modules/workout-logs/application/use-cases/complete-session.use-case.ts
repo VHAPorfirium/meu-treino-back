@@ -2,6 +2,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -17,6 +18,8 @@ import {
 
 @Injectable()
 export class CompleteSessionUseCase {
+  private readonly logger = new Logger(CompleteSessionUseCase.name);
+
   constructor(
     @Inject(WORKOUT_LOG_REPOSITORY)
     private readonly repo: WorkoutLogRepository,
@@ -45,7 +48,12 @@ export class CompleteSessionUseCase {
   ): Promise<ProgramCompletionResult | null> {
     try {
       return await this.completeProgramIfFinished.execute(userId, workoutId);
-    } catch {
+    } catch (err) {
+      const e = err as { message?: string; stack?: string };
+      this.logger.error(
+        `Falha ao avaliar conclusão de programa (userId=${userId}, workoutId=${workoutId}): ${e?.message ?? String(err)}`,
+        e?.stack,
+      );
       return null;
     }
   }

@@ -70,7 +70,7 @@ export class AssignProgramToUsersUseCase {
     return this.programRepository.findProgramById(programId);
   }
 
-  private async ensureAllAreTrainees(userIds: string[]) {
+  async ensureAllAreTrainees(userIds: string[]) {
     if (userIds.length === 0) return;
     const allUsers = await this.userRepository.findAll();
     const userById = new Map(allUsers.map((user) => [user.id, user]));

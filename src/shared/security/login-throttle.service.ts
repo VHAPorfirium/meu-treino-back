@@ -34,6 +34,7 @@ export interface ThrottleStatus {
 @Injectable()
 export class LoginThrottleService {
   private readonly buckets = new Map<string, Bucket>();
+  private lastPruneAt = 0;
 
   private readonly IP_POLICY: Policy = {
     maxFails: 5,
@@ -46,9 +47,16 @@ export class LoginThrottleService {
     lockMs: 2 * 60_000,
   };
   private readonly GLOBAL_KEY = 'login::*';
+  private readonly PRUNE_INTERVAL_MS = 60_000;
+  private readonly MAX_TRACKED_KEYS = 10_000;
 
   key(ip: string): string {
     return `login::${ip}`;
+  }
+
+  /** Quantidade atual de buckets rastreados (útil para diagnóstico/testes). */
+  size(): number {
+    return this.buckets.size;
   }
 
   /** Está bloqueado agora (por IP ou globalmente)? Devolve o escopo que bloqueou. */
@@ -64,8 +72,10 @@ export class LoginThrottleService {
     lockedNow: boolean;
     scope?: 'ip' | 'global';
   } {
-    const ip = this.fail(key, this.IP_POLICY);
-    const global = this.fail(this.GLOBAL_KEY, this.GLOBAL_POLICY);
+    const now = Date.now();
+    this.maybePrune(now);
+    const ip = this.fail(key, this.IP_POLICY, now);
+    const global = this.fail(this.GLOBAL_KEY, this.GLOBAL_POLICY, now);
     if (ip.lockedNow) return { attempts: ip.attempts, lockedNow: true, scope: 'ip' };
     if (global.lockedNow)
       return { attempts: global.attempts, lockedNow: true, scope: 'global' };
@@ -89,11 +99,21 @@ export class LoginThrottleService {
         scope,
       };
     }
+    const policy = scope === 'global' ? this.GLOBAL_POLICY : this.IP_POLICY;
+    const recentFails = b.fails.filter((t) => now - t < policy.windowMs);
+    if (recentFails.length === 0 && key !== this.GLOBAL_KEY) {
+      this.buckets.delete(key);
+      return { locked: false, retryAfterSec: 0, attempts: 0, scope };
+    }
+    b.fails = recentFails;
     return { locked: false, retryAfterSec: 0, attempts: b.fails.length, scope };
   }
 
-  private fail(key: string, policy: Policy): { attempts: number; lockedNow: boolean } {
-    const now = Date.now();
+  private fail(
+    key: string,
+    policy: Policy,
+    now: number,
+  ): { attempts: number; lockedNow: boolean } {
     const b = this.buckets.get(key) ?? { fails: [] };
     b.fails = b.fails.filter((t) => now - t < policy.windowMs);
     b.fails.push(now);
@@ -102,7 +122,37 @@ export class LoginThrottleService {
       b.lockedUntil = now + policy.lockMs;
       lockedNow = true;
     }
+    // Reinsere para manter ordem de uso recente (LRU simples no Map)
+    this.buckets.delete(key);
     this.buckets.set(key, b);
     return { attempts: b.fails.length, lockedNow };
+  }
+
+  private maybePrune(now: number): void {
+    if (
+      now - this.lastPruneAt < this.PRUNE_INTERVAL_MS &&
+      this.buckets.size < this.MAX_TRACKED_KEYS
+    ) {
+      return;
+    }
+    this.lastPruneAt = now;
+    for (const [k, b] of this.buckets.entries()) {
+      if (k === this.GLOBAL_KEY) continue;
+      const locked = Boolean(b.lockedUntil && b.lockedUntil > now);
+      if (locked) continue;
+      const hasRecentFail = b.fails.some((t) => now - t < this.IP_POLICY.windowMs);
+      if (!hasRecentFail) this.buckets.delete(k);
+    }
+    // Teto rígido contra ataques distribuídos com milhares de IPs únicos na mesma janela
+    if (this.buckets.size >= this.MAX_TRACKED_KEYS) {
+      const overflow = this.buckets.size - this.MAX_TRACKED_KEYS + 1;
+      let removed = 0;
+      for (const k of this.buckets.keys()) {
+        if (k === this.GLOBAL_KEY) continue;
+        this.buckets.delete(k);
+        removed++;
+        if (removed >= overflow) break;
+      }
+    }
   }
 }

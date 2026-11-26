@@ -35,7 +35,10 @@ export class CacheService {
   private acertos = 0;
   private erros = 0;
   /** requisições em voo por chave — evita N consultas iguais no mesmo instante. */
-  private readonly emVoo = new Map<string, Promise<unknown>>();
+  private readonly emVoo = new Map<
+    string,
+    { promessa: Promise<unknown>; invalidada: boolean }
+  >();
 
   /** `CACHE_ENABLED=false` desliga o cache sem necessidade de redeploy de código. */
   readonly ativo: boolean;
@@ -85,20 +88,29 @@ export class CacheService {
     // Single-flight: com `connection_limit=1` no pooler, 5 requisições iguais
     // chegando juntas num cache frio virariam 5 consultas enfileiradas. Aqui
     // vira uma só, e as outras esperam o mesmo resultado.
-    const jaEmVoo = this.emVoo.get(chave) as Promise<T> | undefined;
-    if (jaEmVoo) return jaEmVoo;
+    const jaEmVoo = this.emVoo.get(chave);
+    if (jaEmVoo) return jaEmVoo.promessa as Promise<T>;
 
     this.erros++;
+    const entrada: { promessa: Promise<T>; invalidada: boolean } = {
+      promessa: null as unknown as Promise<T>,
+      invalidada: false,
+    };
     const promessa = produzir()
       .then(async (valor) => {
-        if (valor !== undefined && valor !== null) {
+        if (!entrada.invalidada && valor !== undefined && valor !== null) {
           await this.cache.set(chave, valor, ttlMs);
         }
         return valor;
       })
-      .finally(() => this.emVoo.delete(chave));
+      .finally(() => {
+        if (this.emVoo.get(chave) === entrada) {
+          this.emVoo.delete(chave);
+        }
+      });
 
-    this.emVoo.set(chave, promessa);
+    entrada.promessa = promessa;
+    this.emVoo.set(chave, entrada);
     return promessa;
   }
 
@@ -114,6 +126,14 @@ export class CacheService {
 
   private async apagarPorPrefixo(prefixo: string): Promise<number> {
     if (!this.ativo) return 0;
+    // Fecha a corrida single-flight × invalidação: qualquer leitura em voo
+    // iniciada antes da escrita não gravará valor velho no cache ao resolver.
+    for (const [chave, entrada] of this.emVoo.entries()) {
+      if (chave.startsWith(prefixo)) {
+        entrada.invalidada = true;
+        this.emVoo.delete(chave);
+      }
+    }
     try {
       // São centenas de chaves em memória, não milhões: varrer é barato.
       // (No dia do Redis, este é o ÚNICO ponto que vira SCAN/tag.)

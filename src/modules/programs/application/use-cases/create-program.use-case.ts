@@ -31,16 +31,33 @@ export class CreateProgramUseCase {
       throw error;
     }
 
+    const uniqueWorkoutIds = Array.from(new Set(createProgramDto.workoutIds));
+    const uniqueUserIds = Array.from(new Set(createProgramDto.userIds));
+
+    // Valida treinos e alunos ANTES de gravar para nunca deixar programa/vínculos pela metade.
+    if (uniqueWorkoutIds.length > 0) {
+      const existingWorkoutIds = new Set(
+        await this.programRepository.findExistingWorkoutIds(uniqueWorkoutIds),
+      );
+      const missingWorkoutIds = uniqueWorkoutIds.filter((id) => !existingWorkoutIds.has(id));
+      if (missingWorkoutIds.length > 0) {
+        throw new BadRequestException(
+          'Treinos não encontrados: ' + missingWorkoutIds.join(', '),
+        );
+      }
+    }
+    await this.assignProgramToUsers.ensureAllAreTrainees(uniqueUserIds);
+
     const createdProgram = await this.programRepository.createProgram({
       name: createProgramDto.name.trim(),
       description: createProgramDto.description?.trim() || null,
       type: createProgramDto.type,
       targetWeeks: durationInput.targetWeeks,
       targetDays: durationInput.targetDays,
-      workoutIds: Array.from(new Set(createProgramDto.workoutIds)),
+      workoutIds: uniqueWorkoutIds,
     });
 
-    if (createProgramDto.userIds.length === 0) return createdProgram;
-    return this.assignProgramToUsers.execute(createdProgram.id, createProgramDto.userIds);
+    if (uniqueUserIds.length === 0) return createdProgram;
+    return this.assignProgramToUsers.execute(createdProgram.id, uniqueUserIds);
   }
 }

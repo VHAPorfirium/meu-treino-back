@@ -9,13 +9,16 @@ import {
   WORKOUT_LOG_REPOSITORY,
   WorkoutLogRepository,
 } from '../../domain/workout-log.repository';
+import { CacheService } from '../../../../shared/cache/cache.service';
 import { diaLocal } from '../../../../shared/time/dia-local';
+import { invalidarProgresso } from './invalida-progresso';
 
 @Injectable()
 export class OpenSessionUseCase {
   constructor(
     @Inject(WORKOUT_LOG_REPOSITORY)
     private readonly repo: WorkoutLogRepository,
+    private readonly cache: CacheService,
   ) {}
 
   /**
@@ -50,7 +53,9 @@ export class OpenSessionUseCase {
     }
 
     try {
-      return await this.repo.open(userId, workoutId, dayKey);
+      const opened = await this.repo.open(userId, workoutId, dayKey);
+      await invalidarProgresso(this.cache, userId);
+      return opened;
     } catch (err) {
       // Corrida concorrente de dois POST /workout-logs simultâneos no mesmo dia
       if ((err as { code?: string })?.code === 'P2002') {

@@ -6,9 +6,11 @@ import {
   IsArray,
   IsEnum,
   IsInt,
+  IsNotEmpty,
   IsOptional,
   IsString,
   Max,
+  MaxLength,
   Min,
   ValidateIf,
   ValidateNested,
@@ -22,6 +24,7 @@ import { MAX_DURACAO_SEGUNDOS } from './add-exercise.dto';
  */
 export class AddExerciseItemDto {
   @IsString()
+  @IsNotEmpty()
   exerciseId: string;
 
   // E10 — REPS (padrão) ou TIME
@@ -37,6 +40,8 @@ export class AddExerciseItemDto {
 
   @ValidateIf((o: AddExerciseItemDto) => o.mode !== ExerciseMode.TIME)
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(20)
   reps?: string; // ex: "10-12"
 
   @ValidateIf((o: AddExerciseItemDto) => o.mode === ExerciseMode.TIME)
@@ -52,6 +57,7 @@ export class AddExerciseItemDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(300)
   notes?: string;
 }
 

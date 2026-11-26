@@ -60,6 +60,9 @@ export interface ProgramRepository {
 
   listPrograms(): Promise<ProgramWithDetails[]>;
 
+  /** Retorna os IDs existentes dentre os `workoutIds` informados. */
+  findExistingWorkoutIds(workoutIds: string[]): Promise<string[]>;
+
   /** Participação atual do aluno (ACTIVE ou COMPLETED ainda não arquivada). */
   findCurrentAssignmentByUser(userId: string): Promise<AssignmentWithProgram | null>;
 

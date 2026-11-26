@@ -9,21 +9,35 @@
  *
  * `APP_TIMEZONE` permite mudar o fuso sem tocar no código (default: São Paulo).
  */
-export const APP_TIMEZONE = process.env.APP_TIMEZONE ?? 'America/Sao_Paulo';
+/** Lê APP_TIMEZONE dinamicamente (após ConfigModule carregar `.env`). */
+export function getAppTimezone(): string {
+  return process.env.APP_TIMEZONE?.trim() || 'America/Sao_Paulo';
+}
+
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
+function getFormatter(tz: string): Intl.DateTimeFormat {
+  let fmt = formatters.get(tz);
+  if (!fmt) {
+    // en-CA formata como YYYY-MM-DD, que é exatamente o que queremos
+    fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    formatters.set(tz, fmt);
+  }
+  return fmt;
+}
 
 /** 'YYYY-MM-DD' do dia local. É a chave de negócio gravada em `WorkoutLog.dayKey`. */
-export function diaLocal(d: Date = new Date(), tz: string = APP_TIMEZONE): string {
-  // en-CA formata como YYYY-MM-DD, que é exatamente o que queremos
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: tz,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(d);
+export function diaLocal(d: Date = new Date(), tz: string = getAppTimezone()): string {
+  return getFormatter(tz).format(d);
 }
 
 /** Dia da semana (0 = domingo) no fuso local. */
-export function diaDaSemanaLocal(d: Date = new Date(), tz: string = APP_TIMEZONE): number {
+export function diaDaSemanaLocal(d: Date = new Date(), tz: string = getAppTimezone()): number {
   const [ano, mes, dia] = diaLocal(d, tz).split('-').map(Number);
   // Date.UTC + getUTCDay evita que o fuso do processo mexa no resultado
   return new Date(Date.UTC(ano, mes - 1, dia)).getUTCDay();
@@ -34,6 +48,15 @@ export function somarDias(chave: string, dias: number): string {
   const [ano, mes, dia] = chave.split('-').map(Number);
   const d = new Date(Date.UTC(ano, mes - 1, dia));
   d.setUTCDate(d.getUTCDate() + dias);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Segunda-feira ('YYYY-MM-DD') da semana local à qual `chave` pertence. */
+export function inicioDaSemanaLocal(chave: string): string {
+  const [ano, mes, dia] = chave.split('-').map(Number);
+  const d = new Date(Date.UTC(ano, mes - 1, dia));
+  const offsetSegunda = (d.getUTCDay() + 6) % 7; // segunda = 0 ... domingo = 6
+  d.setUTCDate(d.getUTCDate() - offsetSegunda);
   return d.toISOString().slice(0, 10);
 }
 

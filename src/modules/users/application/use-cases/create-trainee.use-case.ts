@@ -13,12 +13,24 @@ import { UserSummary } from './list-users.use-case';
  */
 @Injectable()
 export class CreateTraineeUseCase {
+  /** Serializa criações concorrentes para evitar bypass da unicidade de PIN (argon2). */
+  private pendingCreation: Promise<unknown> = Promise.resolve();
+
   constructor(
     @Inject(USER_REPOSITORY)
     private readonly userRepository: UserRepository,
   ) {}
 
-  async execute(createTraineeDto: CreateTraineeDto): Promise<UserSummary> {
+  execute(createTraineeDto: CreateTraineeDto): Promise<UserSummary> {
+    const run = this.pendingCreation.then(
+      () => this.createSerial(createTraineeDto),
+      () => this.createSerial(createTraineeDto),
+    );
+    this.pendingCreation = run.catch(() => undefined);
+    return run;
+  }
+
+  private async createSerial(createTraineeDto: CreateTraineeDto): Promise<UserSummary> {
     const traineeName = createTraineeDto.name.trim();
     const existingUsers = await this.userRepository.findAll();
 
@@ -33,11 +45,18 @@ export class CreateTraineeUseCase {
       }
     }
 
-    const createdUser = await this.userRepository.create({
-      name: traineeName,
-      role: Role.TRAINEE,
-      pinHash: await argon2.hash(createTraineeDto.pin),
-    });
-    return { id: createdUser.id, name: createdUser.name, role: createdUser.role };
+    try {
+      const createdUser = await this.userRepository.create({
+        name: traineeName,
+        role: Role.TRAINEE,
+        pinHash: await argon2.hash(createTraineeDto.pin),
+      });
+      return { id: createdUser.id, name: createdUser.name, role: createdUser.role };
+    } catch (err) {
+      if ((err as { code?: string })?.code === 'P2002') {
+        throw new ConflictException('Já existe um usuário com esse nome');
+      }
+      throw err;
+    }
   }
 }

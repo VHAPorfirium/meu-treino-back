@@ -16,7 +16,7 @@ export class UsersController {
   @Roles(Role.ADMIN)
   @Get()
   list(@Query('role') role?: string) {
-    if (role !== undefined && !(role in Role)) {
+    if (role !== undefined && !Object.values(Role).includes(role as Role)) {
       throw new BadRequestException('role inválido');
     }
     return this.listUsers.execute(role as Role | undefined);

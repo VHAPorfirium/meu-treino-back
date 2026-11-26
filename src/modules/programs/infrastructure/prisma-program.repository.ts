@@ -53,21 +53,38 @@ export class PrismaProgramRepository implements ProgramRepository {
       await transaction.trainingProgram.update({ where: { id: programId }, data: programFields });
 
       if (workoutIds) {
-        await transaction.workout.updateMany({
+        const removedWorkouts = await transaction.workout.findMany({
           where: { programId, id: { notIn: workoutIds } },
-          data: { programId: null },
+          select: { id: true },
         });
+        const removedWorkoutIds = removedWorkouts.map((workout) => workout.id);
+
+        if (removedWorkoutIds.length > 0) {
+          await transaction.workout.updateMany({
+            where: { id: { in: removedWorkoutIds } },
+            data: { programId: null },
+          });
+        }
         await this.attachWorkouts(transaction, programId, workoutIds);
 
-        const currentParticipants = await transaction.programAssignment.findMany({
-          where: { programId, status: { in: CURRENT_ASSIGNMENT_STATUSES } },
+        // Só participantes ATIVOS recebem/perdem treinos do programa; quem já
+        // concluiu (COMPLETED) não deve receber treinos novos retroativamente.
+        const activeParticipants = await transaction.programAssignment.findMany({
+          where: { programId, status: ProgramStatus.ACTIVE },
           select: { userId: true },
         });
-        await this.assignWorkoutsToUsers(
-          transaction,
-          workoutIds,
-          currentParticipants.map((participant) => participant.userId),
-        );
+        const activeUserIds = activeParticipants.map((participant) => participant.userId);
+
+        if (removedWorkoutIds.length > 0 && activeUserIds.length > 0) {
+          await transaction.workoutAssignment.deleteMany({
+            where: {
+              workoutId: { in: removedWorkoutIds },
+              userId: { in: activeUserIds },
+            },
+          });
+        }
+
+        await this.assignWorkoutsToUsers(transaction, workoutIds, activeUserIds);
       }
 
       return transaction.trainingProgram.findUniqueOrThrow({
@@ -95,6 +112,15 @@ export class PrismaProgramRepository implements ProgramRepository {
       orderBy: { createdAt: 'desc' },
       include: PROGRAM_DETAILS_INCLUDE,
     });
+  }
+
+  async findExistingWorkoutIds(workoutIds: string[]): Promise<string[]> {
+    if (workoutIds.length === 0) return [];
+    const found = await this.prisma.workout.findMany({
+      where: { id: { in: workoutIds } },
+      select: { id: true },
+    });
+    return found.map((w) => w.id);
   }
 
   findCurrentAssignmentByUser(userId: string): Promise<AssignmentWithProgram | null> {

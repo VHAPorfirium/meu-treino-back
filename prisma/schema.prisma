@@ -210,7 +210,7 @@ model SetLog {
 model ProgressPhoto {
   id      String   @id @default(cuid())
   userId  String
-  path    String // ex: <userId>/<uuid>.jpg
+  path    String   @unique // ex: <userId>/<uuid>.jpg
   takenAt DateTime @default(now())
   note    String?
   user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)

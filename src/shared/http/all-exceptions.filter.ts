@@ -23,6 +23,12 @@ import { clientIp, requestId } from './client-ip';
  * Também registra o 429 do rate limit como evento de segurança (`ratelimit.exceeded`),
  * substituindo o antigo ThrottlerLogFilter — um filtro só, sem ambiguidade de ordem.
  */
+const PRISMA_ERROR_MAP: Record<string, { status: number; message: string }> = {
+  P2002: { status: HttpStatus.CONFLICT, message: 'Registro já existe' },
+  P2003: { status: HttpStatus.BAD_REQUEST, message: 'Referência inválida' },
+  P2025: { status: HttpStatus.NOT_FOUND, message: 'Registro não encontrado' },
+};
+
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly log = new Logger('Exceptions');
@@ -34,14 +40,23 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const req = ctx.getRequest<Request>();
     const res = ctx.getResponse<Response>();
 
+    if (res.headersSent) return;
+
     const rid = requestId(req);
     const method = req.method;
     const path = req.originalUrl?.split('?')[0] ?? req.url;
 
     const isHttp = exception instanceof HttpException;
+    const prismaCode =
+      !isHttp && exception && typeof exception === 'object'
+        ? (exception as { code?: unknown }).code
+        : undefined;
+    const mappedPrisma =
+      typeof prismaCode === 'string' ? PRISMA_ERROR_MAP[prismaCode] : undefined;
+
     const status = isHttp
       ? exception.getStatus()
-      : HttpStatus.INTERNAL_SERVER_ERROR;
+      : (mappedPrisma?.status ?? HttpStatus.INTERNAL_SERVER_ERROR);
 
     // 429 do rate limit global → evento de segurança (Frente B)
     if (exception instanceof ThrottlerException) {
@@ -82,7 +97,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
         : {
             statusCode: status,
             message:
-              typeof payload === 'string' ? payload : 'Internal server error',
+              typeof payload === 'string'
+                ? payload
+                : (mappedPrisma?.message ?? 'Internal server error'),
           };
 
     res.status(status).json({ ...base, requestId: rid });
