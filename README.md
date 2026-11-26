@@ -15,7 +15,7 @@ Parte do projeto descrito em `../SYSTEM_DESIGN.md`. 2 usuários (ADMIN + TRAINEE
 ## Estrutura
 ```
 src/
-  modules/{auth,users,exercises,muscle-groups,workouts,workout-logs}/
+  modules/{auth,users,exercises,muscle-groups,workouts,workout-logs,programs,progress-photos,notes,push,health}/
     domain/         # interfaces de repositório + tipos
     application/    # use-cases + DTOs
     infrastructure/ # implementação Prisma dos repositórios
@@ -23,6 +23,10 @@ src/
   shared/
     prisma/   # PrismaService + módulo global
     auth/     # JWT strategy, guards, decorators (@Roles, @Public, @CurrentUser)
+    cache/    # CacheService em memória com single-flight e invalidação por usuário
+    security/ # LoginThrottleService + audit logs estruturados (pino)
+    storage/  # SupabaseStorageService (URLs assinadas)
+    time/     # diaLocal() e utilitários de fuso (APP_TIMEZONE)
 prisma/
   schema.prisma
   seed.ts                    # catálogo + tradução + alternativas + usuários
@@ -70,11 +74,12 @@ npm run start:dev            # API em watch mode
 | `ADMIN_PIN` / `TRAINEE_PIN` | PINs de login (usados no seed p/ gerar o hash). |
 | `PORT` | Porta da API (padrão 3000). |
 | `CORS_ORIGIN` | Origem do frontend (Vercel em produção). |
+| `APP_TIMEZONE` | Fuso local do app para virada do dia e métricas (padrão `America/Sao_Paulo`). |
 | `DATASET_PATH` | Caminho do dataset clonado (padrão `../exercises-dataset`). |
 | `TRANSLATION_PROVIDER` | `none` (mantém inglês) ou `libretranslate`. |
 | `LIBRETRANSLATE_URL` / `LIBRETRANSLATE_API_KEY` | Endpoint LibreTranslate (se provider = libretranslate). |
 | `MEDIA_PROVIDER` | `none` (usa URLs raw do GitHub) ou `supabase` (faz upload). |
-| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_BUCKET` | Storage (se provider = supabase). |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_BUCKET` / `SUPABASE_PROGRESS_BUCKET` | Storage (se provider = supabase). |
 
 ---
 
@@ -95,29 +100,34 @@ O `prisma/seed.ts`:
 
 ## Endpoints
 
-Base: `/api` · Auth: `Authorization: Bearer <jwt>`
+Base: `/api` · Auth: cookie `mt_token` (`HttpOnly; SameSite=Lax`) ou `Authorization: Bearer <jwt>`
 
 | Método | Rota | Papel |
 |---|---|---|
-| POST | `/auth/login` `{ role, pin }` | público |
+| POST | `/auth/login` `{ pin }` | público |
+| POST | `/auth/logout` | autenticado |
 | GET | `/auth/me` | autenticado |
-| GET | `/exercises?muscleGroup=&search=&page=&pageSize=` | ambos |
+| GET | `/health` | público |
+| GET | `/health/db` · `/health/cache` | ADMIN |
+| GET | `/exercises?muscleGroup=&search=&equipment=&page=&pageSize=` | ambos |
 | GET | `/exercises/:id/alternatives` | ambos |
 | GET | `/muscle-groups` | ambos |
-| POST | `/workouts` | ADMIN |
-| POST | `/workouts/:id/exercises` | ADMIN |
-| GET | `/workouts/today?dayOfWeek=` | TRAINEE |
+| GET/POST/PATCH/DELETE | `/workouts` · `/workouts/:id/exercises` | ADMIN |
+| GET | `/workouts/today?dayOfWeek=` · `/workouts/mine` | TRAINEE |
 | POST | `/workout-logs` `{ workoutId }` | TRAINEE |
 | PATCH | `/workout-logs/:id/exercises/:weId` | TRAINEE |
 | PATCH | `/workout-logs/:id/complete` | TRAINEE |
-| GET | `/workout-logs/history` | ADMIN |
-| GET | `/workout-logs/progress-summary` | ADMIN |
+| GET | `/workout-logs/history?limit=&offset=` | ADMIN |
+| GET | `/workout-logs/my-history?limit=&offset=` | TRAINEE |
+| GET | `/workout-logs/progress-summary?userId=` | ADMIN |
+| GET/POST/PATCH/DELETE | `/programs` · `/programs/current` · `/programs/achievements` | ADMIN / TRAINEE |
+| GET/POST/DELETE | `/progress-photos` · `/notes` · `/push` | ADMIN / TRAINEE |
 
 ### Exemplo — login
 ```bash
-curl -X POST http://localhost:3000/api/auth/login \
+curl -i -X POST http://localhost:3000/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"role":"TRAINEE","pin":"5678"}'
+  -d '{"pin":"5678"}'
 ```
 
 ---

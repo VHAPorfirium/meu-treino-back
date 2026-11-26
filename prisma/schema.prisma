@@ -97,6 +97,7 @@ model Exercise {
 
   @@index([target, bodyPart])
   @@index([muscleGroupId])
+  @@index([namePt])
 }
 
 model ExerciseAlternative {

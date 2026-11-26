@@ -1,7 +1,6 @@
 import { ExerciseStatus } from '@prisma/client';
 import { CacheService } from '../../../../shared/cache/cache.service';
 import { PrismaService } from '../../../../shared/prisma/prisma.service';
-import { WorkoutLogRepository } from '../../domain/workout-log.repository';
 import { ProgressSummaryUseCase } from './progress-summary.use-case';
 
 describe('ProgressSummaryUseCase — fuso local (dayKey)', () => {
@@ -60,11 +59,7 @@ describe('ProgressSummaryUseCase — fuso local (dayKey)', () => {
       },
     } as unknown as PrismaService;
 
-    const useCase = new ProgressSummaryUseCase(
-      {} as WorkoutLogRepository,
-      prisma,
-      {} as CacheService,
-    );
+    const useCase = new ProgressSummaryUseCase(prisma, {} as CacheService);
 
     // "Agora": segunda-feira 2026-09-14 às 23h00 BRT (= 2026-09-15T02:00:00Z)
     const now = new Date('2026-09-15T02:00:00Z');
@@ -143,11 +138,7 @@ describe('ProgressSummaryUseCase — fuso local (dayKey)', () => {
       },
     } as unknown as PrismaService;
 
-    const useCase = new ProgressSummaryUseCase(
-      {} as WorkoutLogRepository,
-      prisma,
-      {} as CacheService,
-    );
+    const useCase = new ProgressSummaryUseCase(prisma, {} as CacheService);
 
     const summary = await useCase.calcular('aluna-1', new Date('2026-09-14T18:00:00Z'));
 

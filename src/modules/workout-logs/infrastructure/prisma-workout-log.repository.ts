@@ -139,25 +139,6 @@ export class PrismaWorkoutLogRepository implements WorkoutLogRepository {
     });
   }
 
-  allExerciseLogs(since?: Date): Promise<any[]> {
-    return this.prisma.workoutExerciseLog.findMany({
-      where: since ? { workoutLog: { date: { gte: since } } } : undefined,
-      include: {
-        workoutLog: { select: { date: true } },
-        workoutExercise: { include: { exercise: true } },
-        actualExercise: { select: { id: true, name: true } },
-        sets: true,
-      },
-      orderBy: { workoutLog: { date: 'asc' } },
-    });
-  }
-
-  countSessions(since: Date): Promise<number> {
-    return this.prisma.workoutLog.count({
-      where: { completed: true, date: { gte: since } },
-    });
-  }
-
   findAssignedWorkout(
     userId: string,
     workoutId: string,

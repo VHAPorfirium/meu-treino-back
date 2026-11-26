@@ -1,10 +1,6 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ExerciseStatus } from '@prisma/client';
 import { PrismaService } from '../../../../shared/prisma/prisma.service';
-import {
-  WORKOUT_LOG_REPOSITORY,
-  WorkoutLogRepository,
-} from '../../domain/workout-log.repository';
 import { CacheService, TTL } from '../../../../shared/cache/cache.service';
 import {
   diaLocal,
@@ -15,8 +11,6 @@ import {
 @Injectable()
 export class ProgressSummaryUseCase {
   constructor(
-    @Inject(WORKOUT_LOG_REPOSITORY)
-    private readonly repo: WorkoutLogRepository,
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
   ) {}

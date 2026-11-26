@@ -80,11 +80,6 @@ export interface WorkoutLogRepository {
     opts?: { limit?: number; offset?: number },
   ): Promise<any[]>;
 
-  /** Todos os exercise logs com joins p/ analytics. */
-  allExerciseLogs(since?: Date): Promise<any[]>;
-
-  countSessions(since: Date): Promise<number>;
-
   /** Exercícios prescritos de um treino (para "última vez" e sugestão de carga). */
   listPrescribedExercises(workoutId: string): Promise<PrescribedWorkoutExercise[]>;
 

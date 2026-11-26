@@ -22,8 +22,6 @@ function mockRepo(): jest.Mocked<WorkoutLogRepository> {
     complete: jest.fn(),
     history: jest.fn(),
     historyByUser: jest.fn(),
-    allExerciseLogs: jest.fn(),
-    countSessions: jest.fn(),
     listPrescribedExercises: jest.fn(),
     findLastPerformances: jest.fn(),
     listExercisePerformances: jest.fn(),
