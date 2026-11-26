@@ -2,9 +2,11 @@ import { ExerciseMode } from '@prisma/client';
 import {
   IsEnum,
   IsInt,
+  IsNotEmpty,
   IsOptional,
   IsString,
   Max,
+  MaxLength,
   Min,
   ValidateIf,
 } from 'class-validator';
@@ -14,6 +16,7 @@ export const MAX_DURACAO_SEGUNDOS = 4 * 60 * 60;
 
 export class AddExerciseDto {
   @IsString()
+  @IsNotEmpty()
   exerciseId: string;
 
   @IsInt()
@@ -34,6 +37,8 @@ export class AddExerciseDto {
   // obrigatório só no modo REPS — num exercício por tempo não existe "reps"
   @ValidateIf((o: AddExerciseDto) => o.mode !== ExerciseMode.TIME)
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(20)
   reps?: string; // ex: "10-12"
 
   // obrigatório só no modo TIME
@@ -50,5 +55,6 @@ export class AddExerciseDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(300)
   notes?: string;
 }

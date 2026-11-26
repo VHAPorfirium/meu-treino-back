@@ -1,3 +1,4 @@
+import { Transform } from 'class-transformer';
 import { ProgramType } from '@prisma/client';
 import {
   ArrayMaxSize,
@@ -13,6 +14,7 @@ import {
 } from 'class-validator';
 
 export class CreateProgramDto {
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @MinLength(1)
   @MaxLength(120)

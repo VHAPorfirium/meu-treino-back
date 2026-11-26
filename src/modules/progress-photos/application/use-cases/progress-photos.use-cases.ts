@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -49,14 +50,21 @@ export class RegisterPhotoUseCase {
     if (!dto.path.startsWith(`${userId}/`)) {
       throw new ForbiddenException('Caminho de foto inválido para este usuário');
     }
-    return this.prisma.progressPhoto.create({
-      data: {
-        userId,
-        path: dto.path,
-        note: dto.note?.trim() || null,
-        takenAt: dto.takenAt ? new Date(dto.takenAt) : undefined,
-      },
-    });
+    try {
+      return await this.prisma.progressPhoto.create({
+        data: {
+          userId,
+          path: dto.path,
+          note: dto.note?.trim() || null,
+          takenAt: dto.takenAt ? new Date(dto.takenAt) : undefined,
+        },
+      });
+    } catch (err) {
+      if ((err as { code?: string })?.code === 'P2002') {
+        throw new ConflictException('Esta foto já foi registrada');
+      }
+      throw err;
+    }
   }
 }
 

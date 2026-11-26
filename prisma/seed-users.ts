@@ -16,26 +16,40 @@ export interface SeedUser {
   pin: string;
 }
 
-export const USERS: SeedUser[] = [
-  { name: 'Admin', role: Role.ADMIN, pin: process.env.ADMIN_PIN ?? '9841' },
-  { name: 'Victor Hugo', role: Role.TRAINEE, pin: process.env.VICTOR_PIN ?? '5823' },
-  { name: 'Ninfa', role: Role.TRAINEE, pin: process.env.NINFA_PIN ?? '7194' },
-];
+function resolveSeedPin(envName: string, devFallback: string): string {
+  const value = process.env[envName]?.trim();
+  if (value) return value;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      `FATAL DE SEGURANÇA: defina ${envName} no ambiente antes de rodar o seed em produção.`,
+    );
+  }
+  return devFallback;
+}
+
+export function resolveSeedUsers(): SeedUser[] {
+  return [
+    { name: 'Admin', role: Role.ADMIN, pin: resolveSeedPin('ADMIN_PIN', '9841') },
+    { name: 'Victor Hugo', role: Role.TRAINEE, pin: resolveSeedPin('VICTOR_PIN', '5823') },
+    { name: 'Ninfa', role: Role.TRAINEE, pin: resolveSeedPin('NINFA_PIN', '7194') },
+  ];
+}
 
 /**
- * Deixa o banco com EXATAMENTE os usuários de `USERS`:
- *  - upsert por nome (preserva o histórico de quem permanece);
- *  - remove qualquer usuário fora da lista, junto com os logs dele.
+ * Reconcilia os usuários base de forma NÃO-DESTRUTIVA (upsert por nome):
+ *  - preserva histórico e preserva alunos criados posteriormente pelo painel (`POST /api/users`).
+ *  - só remove usuários extras se `SEED_PRUNE_USERS=true` for informado explicitamente.
  */
 export async function syncUsers(prisma: PrismaClient): Promise<void> {
-  const pins = USERS.map((u) => u.pin);
+  const users = resolveSeedUsers();
+  const pins = users.map((u) => u.pin);
   if (new Set(pins).size !== pins.length) {
     throw new Error(
       'PINs duplicados — cada usuário precisa de um PIN único (login é por PIN).',
     );
   }
 
-  for (const u of USERS) {
+  for (const u of users) {
     const pinHash = await argon2.hash(u.pin);
     await prisma.user.upsert({
       where: { name: u.name },
@@ -45,17 +59,19 @@ export async function syncUsers(prisma: PrismaClient): Promise<void> {
     console.log(`✓ ${u.name} (${u.role})`);
   }
 
-  const keep = USERS.map((u) => u.name);
-  const extras = await prisma.user.findMany({
-    where: { name: { notIn: keep } },
-    select: { id: true, name: true },
-  });
-  if (extras.length) {
-    const ids = extras.map((e) => e.id);
-    // WorkoutExerciseLog cai em cascata ao apagar o WorkoutLog.
-    await prisma.workoutLog.deleteMany({ where: { userId: { in: ids } } });
-    await prisma.user.deleteMany({ where: { id: { in: ids } } });
-    console.log(`- removidos: ${extras.map((e) => e.name).join(', ')}`);
+  if (process.env.SEED_PRUNE_USERS === 'true') {
+    const keep = users.map((u) => u.name);
+    const extras = await prisma.user.findMany({
+      where: { name: { notIn: keep } },
+      select: { id: true, name: true },
+    });
+    if (extras.length) {
+      const ids = extras.map((e) => e.id);
+      await prisma.trainerNote.deleteMany({ where: { fromId: { in: ids } } });
+      await prisma.workoutLog.deleteMany({ where: { userId: { in: ids } } });
+      await prisma.user.deleteMany({ where: { id: { in: ids } } });
+      console.log(`- removidos (SEED_PRUNE_USERS=true): ${extras.map((e) => e.name).join(', ')}`);
+    }
   }
 }
 
@@ -65,7 +81,7 @@ if (require.main === module) {
   syncUsers(prisma)
     .then(async () => {
       const total = await prisma.user.count();
-      console.log(`\nUsuários no banco: ${total} (esperado: ${USERS.length})`);
+      console.log(`\nUsuários no banco: ${total}`);
     })
     .catch((e) => {
       console.error(e);

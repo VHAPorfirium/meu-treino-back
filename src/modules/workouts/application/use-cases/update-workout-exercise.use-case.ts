@@ -1,4 +1,10 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { ExerciseMode } from '@prisma/client';
 import {
   WORKOUT_REPOSITORY,
   WorkoutRepository,
@@ -20,6 +26,34 @@ export class UpdateWorkoutExerciseUseCase {
     // garante que o exercício pertence a ESTE treino (evita editar via id alheio)
     const we = await this.repo.findExerciseInWorkout(workoutId, workoutExerciseId);
     if (!we) throw new NotFoundException('Exercício não encontrado neste treino');
-    return this.repo.updateExercise(workoutExerciseId, dto);
+
+    const effectiveMode = dto.mode ?? we.mode;
+    const nextReps = dto.reps !== undefined ? dto.reps : we.reps;
+    const nextDuration =
+      dto.durationSeconds !== undefined ? dto.durationSeconds : we.durationSeconds;
+
+    if (effectiveMode === ExerciseMode.TIME) {
+      if (!nextDuration || nextDuration < 1) {
+        throw new BadRequestException(
+          'durationSeconds é obrigatório e deve ser >= 1 no modo TIME',
+        );
+      }
+      return this.repo.updateExercise(workoutExerciseId, {
+        ...dto,
+        mode: ExerciseMode.TIME,
+        reps: null,
+        durationSeconds: nextDuration,
+      });
+    }
+
+    if (!nextReps || !nextReps.trim()) {
+      throw new BadRequestException('reps é obrigatório no modo REPS');
+    }
+    return this.repo.updateExercise(workoutExerciseId, {
+      ...dto,
+      mode: ExerciseMode.REPS,
+      reps: nextReps.trim(),
+      durationSeconds: null,
+    });
   }
 }

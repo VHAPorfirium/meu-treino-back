@@ -321,7 +321,7 @@ export class PrismaWorkoutRepository implements WorkoutRepository {
       'findAssignedById',
       () =>
         this.prisma.workout.findFirst({
-          where: { id: workoutId, assignments: { some: { userId } } },
+          where: { id: workoutId, active: true, assignments: { some: { userId } } },
           include: FULL_INCLUDE,
         }),
       () => null,

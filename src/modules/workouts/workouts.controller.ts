@@ -22,6 +22,7 @@ import { UpdateWorkoutExerciseDto } from './application/dto/update-workout-exerc
 import { SetAssigneesDto } from './application/dto/set-assignees.dto';
 import { ReorderExercisesDto } from './application/dto/reorder-exercises.dto';
 import { DuplicateWorkoutDto } from './application/dto/duplicate-workout.dto';
+import { TodayWorkoutQueryDto } from './application/dto/today-workout.query';
 import { CreateWorkoutUseCase } from './application/use-cases/create-workout.use-case';
 import { AddExerciseUseCase } from './application/use-cases/add-exercise.use-case';
 import { AddExercisesBatchUseCase } from './application/use-cases/add-exercises-batch.use-case';
@@ -65,10 +66,9 @@ export class WorkoutsController {
   @Get('today')
   today(
     @CurrentUser() user: AuthUser,
-    @Query('dayOfWeek') dayOfWeek?: string,
+    @Query() query: TodayWorkoutQueryDto,
   ) {
-    const dow = dayOfWeek !== undefined ? Number(dayOfWeek) : undefined;
-    return this.getToday.execute(user.userId, dow);
+    return this.getToday.execute(user.userId, query.dayOfWeek);
   }
 
   // GET /api/workouts/mine — treinos direcionados ao usuário logado

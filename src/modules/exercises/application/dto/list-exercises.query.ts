@@ -5,6 +5,7 @@ import { MAX_PAGE_SIZE } from '../../infrastructure/prisma-exercise.repository';
 export class ListExercisesQuery {
   @IsOptional()
   @IsString()
+  @MaxLength(60)
   muscleGroup?: string; // nome do grupo (body_part slug) ou id
 
   @IsOptional()

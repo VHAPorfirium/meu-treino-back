@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
   PROGRAM_REPOSITORY,
   ProgramRepository,
@@ -16,15 +16,27 @@ export class UpdateProgramUseCase {
     const existingProgram = await this.programRepository.findProgramById(programId);
     if (!existingProgram) throw new NotFoundException('Programa não encontrado');
 
+    const uniqueWorkoutIds = updateProgramDto.workoutIds
+      ? Array.from(new Set(updateProgramDto.workoutIds))
+      : undefined;
+
+    if (uniqueWorkoutIds && uniqueWorkoutIds.length > 0) {
+      const existingIds = new Set(
+        await this.programRepository.findExistingWorkoutIds(uniqueWorkoutIds),
+      );
+      const missingIds = uniqueWorkoutIds.filter((id) => !existingIds.has(id));
+      if (missingIds.length > 0) {
+        throw new BadRequestException('Treinos não encontrados: ' + missingIds.join(', '));
+      }
+    }
+
     return this.programRepository.updateProgram(programId, {
       name: updateProgramDto.name?.trim(),
       description:
         updateProgramDto.description === undefined
           ? undefined
           : updateProgramDto.description?.trim() || null,
-      workoutIds: updateProgramDto.workoutIds
-        ? Array.from(new Set(updateProgramDto.workoutIds))
-        : undefined,
+      workoutIds: uniqueWorkoutIds,
     });
   }
 }
