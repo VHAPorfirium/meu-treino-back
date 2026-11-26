@@ -20,6 +20,22 @@ import { LoginUseCase } from './application/use-cases/login.use-case';
 
 const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
 
+/**
+ * Opções compartilhadas entre `res.cookie` e `res.clearCookie`.
+ * Como o frontend proxia `/api/*` no mesmo domínio (Next rewrites), o cookie é
+ * first-party: `sameSite: 'lax'` mitiga CSRF em `<form>` cross-site e funciona
+ * em todos os navegadores (incluindo iOS/Safari). Reutilizar exatamente as mesmas
+ * opções em `clearCookie` evita que o navegador ignore o logout em produção.
+ */
+function authCookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: 'lax' as const,
+    secure: process.env.COOKIE_SECURE === 'true',
+    path: '/',
+  };
+}
+
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -43,15 +59,9 @@ export class AuthController {
       requestId: requestId(req),
     });
 
-    // Local (http): COOKIE_SECURE=false -> SameSite=Lax, sem Secure.
-    // Prod (https, via proxy do Next → cookie first-party): COOKIE_SECURE=true -> None+Secure.
-    const secure = process.env.COOKIE_SECURE === 'true';
     res.cookie(AUTH_COOKIE, result.token, {
-      httpOnly: true,
-      sameSite: secure ? 'none' : 'lax',
-      secure,
+      ...authCookieOptions(),
       maxAge: THIRTY_DAYS,
-      path: '/',
     });
 
     return { user: result.user };
@@ -62,7 +72,7 @@ export class AuthController {
   @Post('logout')
   @HttpCode(200)
   logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    res.clearCookie(AUTH_COOKIE, { path: '/' });
+    res.clearCookie(AUTH_COOKIE, authCookieOptions());
     this.security.event('auth.logout', {
       ip: clientIp(req),
       requestId: requestId(req),
