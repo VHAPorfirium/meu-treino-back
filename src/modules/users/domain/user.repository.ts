@@ -28,6 +28,7 @@ export interface UserRepository {
   findAll(): Promise<User[]>;
   findById(id: string): Promise<User | null>;
   findByCpfHash(cpfHash: string): Promise<User | null>;
+  findManyByCpfHash(cpfHash: string): Promise<User[]>;
   findByUsername(username: string): Promise<User | null>;
   create(userData: CreateUserInput): Promise<User>;
   update(id: string, data: UpdateUserInput): Promise<User>;

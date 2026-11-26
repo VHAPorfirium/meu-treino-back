@@ -21,7 +21,14 @@ export class PrismaUserRepository implements UserRepository {
   }
 
   findByCpfHash(cpfHash: string): Promise<User | null> {
-    return this.prisma.user.findUnique({ where: { cpfHash } });
+    return this.prisma.user.findFirst({ where: { cpfHash } });
+  }
+
+  findManyByCpfHash(cpfHash: string): Promise<User[]> {
+    return this.prisma.user.findMany({
+      where: { cpfHash },
+      orderBy: { createdAt: 'asc' },
+    });
   }
 
   findByUsername(username: string): Promise<User | null> {

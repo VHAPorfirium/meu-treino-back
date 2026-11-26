@@ -41,6 +41,9 @@ function makeInMemoryRepo(initial: User[] = []): UserRepository {
       }
       return null;
     },
+    async findManyByCpfHash(cpfHash) {
+      return Array.from(store.values()).filter((u) => u.cpfHash === cpfHash);
+    },
     async findByUsername(username) {
       for (const u of store.values()) {
         if (u.username === username) return u;
