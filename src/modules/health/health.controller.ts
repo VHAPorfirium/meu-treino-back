@@ -58,9 +58,7 @@ export class HealthController {
 
   /**
    * GET /api/health/cache — taxa de acerto, entradas e se o cache está ligado.
-   *
-   * **ADMIN**, ao contrário do `/health/db`: aqui a resposta conta o padrão de
-   * uso da aplicação, e isso não precisa ser público.
+   * Restrito a ADMIN: expõe padrão de uso e estado interno da aplicação.
    */
   @Roles(Role.ADMIN)
   @SkipThrottle()
@@ -78,19 +76,15 @@ export class HealthController {
   }
 
   /**
-   * GET /api/health/db — diagnóstico de schema.
+   * GET /api/health/db — diagnóstico de schema (somente ADMIN, sujeito ao rate limit).
    *
    * Existe porque um 500 opaco em produção custou um ciclo inteiro de deploy pra
    * ser diagnosticado: `migrate deploy` pode marcar uma migration como aplicada
    * sem ter criado as tabelas, e aí só quebra no primeiro SELECT que as toca.
    * Aqui dá pra ver, sem abrir log de servidor: o que o banco tem, o que a
    * migration registrou e em qual passo exatamente `GET /workouts` falharia.
-   *
-   * Não devolve nenhum dado de usuário — só nomes de tabela, contagens e códigos
-   * de erro do Prisma.
    */
-  @Public()
-  @SkipThrottle()
+  @Roles(Role.ADMIN)
   @Get('db')
   async db() {
     const out: Record<string, unknown> = { ts: new Date().toISOString() };

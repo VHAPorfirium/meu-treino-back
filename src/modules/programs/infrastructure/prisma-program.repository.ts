@@ -114,7 +114,13 @@ export class PrismaProgramRepository implements ProgramRepository {
 
   listCompletedAssignmentsByUser(userId: string): Promise<AssignmentWithProgram[]> {
     return this.prisma.programAssignment.findMany({
-      where: { userId, status: ProgramStatus.COMPLETED, reportData: { not: Prisma.DbNull } },
+      where: {
+        userId,
+        // Conquistas permanecem visíveis mesmo depois que um programa concluído
+        // é arquivado (ao encerrar da home ou ao atribuir um novo programa).
+        status: { in: [ProgramStatus.COMPLETED, ProgramStatus.ARCHIVED] },
+        reportData: { not: Prisma.DbNull },
+      },
       orderBy: { endDate: 'desc' },
       include: ASSIGNMENT_WITH_PROGRAM_INCLUDE,
     });
@@ -140,14 +146,23 @@ export class PrismaProgramRepository implements ProgramRepository {
 
   async archiveAssignment(assignmentId: string): Promise<void> {
     await this.prisma.$transaction(async (transaction) => {
-      const archivedAssignment = await transaction.programAssignment.update({
+      const existingAssignment = await transaction.programAssignment.findUniqueOrThrow({
         where: { id: assignmentId },
-        data: { status: ProgramStatus.ARCHIVED, endDate: new Date() },
+        select: { id: true, userId: true, programId: true, endDate: true },
+      });
+      await transaction.programAssignment.update({
+        where: { id: assignmentId },
+        data: {
+          status: ProgramStatus.ARCHIVED,
+          // Preserva a data original de conclusão (COMPLETED) para não corromper
+          // o `completedAt` da medalha no histórico de conquistas.
+          endDate: existingAssignment.endDate ?? new Date(),
+        },
       });
       await transaction.workoutAssignment.deleteMany({
         where: {
-          userId: archivedAssignment.userId,
-          workout: { programId: archivedAssignment.programId },
+          userId: existingAssignment.userId,
+          workout: { programId: existingAssignment.programId },
         },
       });
     });

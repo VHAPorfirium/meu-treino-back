@@ -4,6 +4,7 @@ import {
   IsArray,
   IsEnum,
   IsInt,
+  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
@@ -48,17 +49,20 @@ export class PatchExerciseLogDto {
   // obrigatório quando status = REPLACED (validado no use-case)
   @IsOptional()
   @IsString()
+  @IsNotEmpty()
   actualExerciseId?: string;
 
   // Compat: carga única. Se `sets` vier, estes dois são DERIVADOS das séries.
   @IsOptional()
   @IsNumber()
   @Min(0)
+  @Max(2000)
   loadUsed?: number;
 
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(50)
   setsCompleted?: number;
 
   /** E10 — tempo total. Se `sets` vier, é DERIVADO delas (como loadUsed). */

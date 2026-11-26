@@ -13,6 +13,7 @@ import { CurrentUser } from '../../shared/auth/current-user.decorator';
 import { AuthUser } from '../../shared/auth/jwt-payload';
 import { OpenSessionDto } from './application/dto/open-session.dto';
 import { PatchExerciseLogDto } from './application/dto/patch-exercise-log.dto';
+import { LastPerformanceQueryDto } from './application/dto/last-performance.query';
 import { OpenSessionUseCase } from './application/use-cases/open-session.use-case';
 import { PatchExerciseLogUseCase } from './application/use-cases/patch-exercise-log.use-case';
 import { CompleteSessionUseCase } from './application/use-cases/complete-session.use-case';
@@ -66,8 +67,11 @@ export class WorkoutLogsController {
   // GET /api/workout-logs/last-performance?workoutId=  — "última vez" + sugestão de carga
   @Roles(Role.TRAINEE, Role.ADMIN)
   @Get('last-performance')
-  lastPerformance(@CurrentUser() user: AuthUser, @Query('workoutId') workoutId: string) {
-    return this.getLastPerformance.execute(user.userId, workoutId);
+  lastPerformance(
+    @CurrentUser() user: AuthUser,
+    @Query() query: LastPerformanceQueryDto,
+  ) {
+    return this.getLastPerformance.execute(user.userId, query.workoutId);
   }
 
   // GET /api/workout-logs/exercise-stats/:exerciseId — números do aluno no exercício

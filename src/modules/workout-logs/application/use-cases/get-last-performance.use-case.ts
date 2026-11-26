@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { ExerciseMode } from '@prisma/client';
 import {
   WORKOUT_LOG_REPOSITORY,
@@ -20,6 +20,10 @@ export class GetLastPerformanceUseCase {
   ) {}
 
   async execute(userId: string, workoutId: string) {
+    const assigned = await this.workoutLogRepository.findAssignedWorkout(userId, workoutId);
+    if (!assigned) {
+      throw new NotFoundException('Treino não encontrado na sua lista');
+    }
     const prescribedExercises = await this.workoutLogRepository.listPrescribedExercises(workoutId);
     const lastPerformances = await this.workoutLogRepository.findLastPerformances(
       userId,

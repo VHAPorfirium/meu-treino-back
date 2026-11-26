@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import * as webpush from 'web-push';
 import { PrismaService } from '../../../shared/prisma/prisma.service';
+import { isSafePushEndpoint } from './push-endpoint.validator';
 
 export interface PushPayload {
   title: string;
@@ -84,6 +85,10 @@ export class PushService implements OnModuleInit {
     const body = JSON.stringify(payload);
     await Promise.all(
       subs.map(async (s) => {
+        if (!isSafePushEndpoint(s.endpoint)) {
+          this.log.warn(`push bloqueado (endpoint não permitido) para ${s.userId}`);
+          return;
+        }
         try {
           await webpush.sendNotification(
             { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },

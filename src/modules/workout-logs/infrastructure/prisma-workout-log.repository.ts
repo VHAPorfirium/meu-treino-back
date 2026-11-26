@@ -135,6 +135,35 @@ export class PrismaWorkoutLogRepository implements WorkoutLogRepository {
     });
   }
 
+  findAssignedWorkout(
+    userId: string,
+    workoutId: string,
+  ): Promise<{ id: string; active: boolean } | null> {
+    return this.prisma.workout.findFirst({
+      where: { id: workoutId, assignments: { some: { userId } } },
+      select: { id: true, active: true },
+    });
+  }
+
+  async workoutExerciseBelongsToWorkout(
+    workoutId: string,
+    workoutExerciseId: string,
+  ): Promise<boolean> {
+    const found = await this.prisma.workoutExercise.findFirst({
+      where: { id: workoutExerciseId, workoutId },
+      select: { id: true },
+    });
+    return Boolean(found);
+  }
+
+  async exerciseExists(exerciseId: string): Promise<boolean> {
+    const found = await this.prisma.exercise.findUnique({
+      where: { id: exerciseId },
+      select: { id: true },
+    });
+    return Boolean(found);
+  }
+
   async listPrescribedExercises(workoutId: string): Promise<PrescribedWorkoutExercise[]> {
     const workoutExercises = await this.prisma.workoutExercise.findMany({
       where: { workoutId },

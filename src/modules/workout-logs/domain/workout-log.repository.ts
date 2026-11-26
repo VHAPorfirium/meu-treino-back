@@ -95,6 +95,21 @@ export interface WorkoutLogRepository {
   /** Todas as vezes que o aluno fez o exercício (feito ou como substituto), em ordem cronológica. */
   listExercisePerformances(userId: string, exerciseId: string): Promise<ExercisePerformanceRecord[]>;
 
+  /** Treino direcionado ao usuário (autorização de sessão e última performance). */
+  findAssignedWorkout(
+    userId: string,
+    workoutId: string,
+  ): Promise<{ id: string; active: boolean } | null>;
+
+  /** Confirma se o exercício prescrito pertence ao treino da sessão. */
+  workoutExerciseBelongsToWorkout(
+    workoutId: string,
+    workoutExerciseId: string,
+  ): Promise<boolean>;
+
+  /** Confirma se o exercício substituto existe no catálogo. */
+  exerciseExists(exerciseId: string): Promise<boolean>;
+
   /** Último treino concluído e exercício mais pulado de cada aluno (TRAINEE). */
   listTraineeActivities(skippedSince: Date): Promise<TraineeActivity[]>;
 }
