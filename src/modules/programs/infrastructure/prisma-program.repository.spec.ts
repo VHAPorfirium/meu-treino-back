@@ -89,4 +89,72 @@ describe('PrismaProgramRepository — preservação de conquistas', () => {
       },
     });
   });
+
+  it('arquiva programas anteriores e atribui o novo numa única transação com lock FOR UPDATE', async () => {
+    const completedDate = new Date('2026-11-10T12:00:00Z');
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'aluna-1' }, { id: 'aluna-2' }]),
+      programAssignment: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'old-completed',
+            userId: 'aluna-1',
+            programId: 'prog-antigo',
+            status: ProgramStatus.COMPLETED,
+            endDate: completedDate,
+          },
+          {
+            id: 'already-active',
+            userId: 'aluna-2',
+            programId: 'prog-novo',
+            status: ProgramStatus.ACTIVE,
+            endDate: null,
+          },
+        ]),
+        update: jest.fn().mockResolvedValue(undefined),
+        createMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      workout: {
+        findMany: jest.fn().mockResolvedValue([{ id: 'w-novo-1' }, { id: 'w-novo-2' }]),
+      },
+      workoutAssignment: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 2 }),
+        createMany: jest.fn().mockResolvedValue({ count: 2 }),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn((fn: (t: typeof tx) => Promise<string[]>) => fn(tx)),
+    } as unknown as PrismaService;
+
+    const repo = new PrismaProgramRepository(prisma);
+    const added = await repo.assignProgramToUsers(
+      'prog-novo',
+      ['aluna-2', 'aluna-1', 'aluna-1'],
+      '2026-11-26',
+    );
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(added).toEqual(['aluna-1']);
+    // Arquivou a participação COMPLETED da aluna-1 preservando o endDate original
+    expect(tx.programAssignment.update).toHaveBeenCalledTimes(1);
+    expect(tx.programAssignment.update).toHaveBeenCalledWith({
+      where: { id: 'old-completed' },
+      data: { status: ProgramStatus.ARCHIVED, endDate: completedDate },
+    });
+    expect(tx.workoutAssignment.deleteMany).toHaveBeenCalledWith({
+      where: { userId: 'aluna-1', workout: { programId: 'prog-antigo' } },
+    });
+    // Só criou atribuição nova para aluna-1 (aluna-2 já estava ACTIVE no prog-novo)
+    expect(tx.programAssignment.createMany).toHaveBeenCalledWith({
+      data: [{ programId: 'prog-novo', userId: 'aluna-1', startDayKey: '2026-11-26' }],
+    });
+    expect(tx.workoutAssignment.createMany).toHaveBeenCalledWith({
+      data: [
+        { workoutId: 'w-novo-1', userId: 'aluna-1' },
+        { workoutId: 'w-novo-2', userId: 'aluna-1' },
+      ],
+      skipDuplicates: true,
+    });
+  });
 });

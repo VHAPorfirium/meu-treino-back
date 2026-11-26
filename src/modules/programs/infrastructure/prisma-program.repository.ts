@@ -153,11 +153,89 @@ export class PrismaProgramRepository implements ProgramRepository {
     });
   }
 
-  async assignProgramToUsers(programId: string, userIds: string[], startDayKey: string): Promise<void> {
-    if (userIds.length === 0) return;
-    await this.prisma.$transaction(async (transaction) => {
+  async assignProgramToUsers(
+    programId: string,
+    userIds: string[],
+    startDayKey: string,
+  ): Promise<string[]> {
+    const sortedUserIds = Array.from(new Set(userIds)).sort();
+    if (sortedUserIds.length === 0) return [];
+
+    return this.prisma.$transaction(async (transaction) => {
+      // Serializa atribuições concorrentes para o mesmo aluno em ordem determinística
+      // (evita deadlock e impede duas participações ACTIVE simultâneas).
+      await transaction.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "User" WHERE "id" IN (${Prisma.join(sortedUserIds)}) ORDER BY "id" FOR UPDATE`,
+      );
+
+      const currentAssignments = await transaction.programAssignment.findMany({
+        where: {
+          userId: { in: sortedUserIds },
+          status: { in: CURRENT_ASSIGNMENT_STATUSES },
+        },
+        select: {
+          id: true,
+          userId: true,
+          programId: true,
+          status: true,
+          endDate: true,
+        },
+      });
+
+      const assignmentsByUser = new Map<string, typeof currentAssignments>();
+      for (const assignment of currentAssignments) {
+        const list = assignmentsByUser.get(assignment.userId) ?? [];
+        list.push(assignment);
+        assignmentsByUser.set(assignment.userId, list);
+      }
+
+      const now = new Date();
+      const newParticipantIds: string[] = [];
+
+      for (const userId of sortedUserIds) {
+        const userAssignments = assignmentsByUser.get(userId) ?? [];
+        const alreadyActiveHere = userAssignments.some(
+          (assignment) =>
+            assignment.programId === programId &&
+            assignment.status === ProgramStatus.ACTIVE,
+        );
+
+        const toArchive = alreadyActiveHere
+          ? userAssignments.filter(
+              (assignment) =>
+                !(
+                  assignment.programId === programId &&
+                  assignment.status === ProgramStatus.ACTIVE
+                ),
+            )
+          : userAssignments;
+
+        for (const assignment of toArchive) {
+          await transaction.programAssignment.update({
+            where: { id: assignment.id },
+            data: {
+              status: ProgramStatus.ARCHIVED,
+              // Preserva a data original de conclusão (COMPLETED) da medalha.
+              endDate: assignment.endDate ?? now,
+            },
+          });
+          await transaction.workoutAssignment.deleteMany({
+            where: {
+              userId: assignment.userId,
+              workout: { programId: assignment.programId },
+            },
+          });
+        }
+
+        if (!alreadyActiveHere) {
+          newParticipantIds.push(userId);
+        }
+      }
+
+      if (newParticipantIds.length === 0) return [];
+
       await transaction.programAssignment.createMany({
-        data: userIds.map((userId) => ({ programId, userId, startDayKey })),
+        data: newParticipantIds.map((userId) => ({ programId, userId, startDayKey })),
       });
       const programWorkouts = await transaction.workout.findMany({
         where: { programId },
@@ -166,8 +244,10 @@ export class PrismaProgramRepository implements ProgramRepository {
       await this.assignWorkoutsToUsers(
         transaction,
         programWorkouts.map((workout) => workout.id),
-        userIds,
+        newParticipantIds,
       );
+
+      return newParticipantIds;
     });
   }
 
