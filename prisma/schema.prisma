@@ -43,19 +43,26 @@ enum ProgramStatus {
 }
 
 model User {
-  id                String               @id @default(cuid())
-  name              String               @unique // identifica a pessoa; usado no seed p/ upsert idempotente
-  role              Role // ADMIN ou TRAINEE — vários usuários por papel são permitidos
-  pinHash           String
-  workoutLogs       WorkoutLog[]
-  assignments       WorkoutAssignment[] // treinos direcionados a este usuário (E1.1)
-  progressPhotos    ProgressPhoto[]
-  notesSent         TrainerNote[]        @relation("NotesSent")
-  notesReceived     TrainerNote[]        @relation("NotesReceived")
-  pushSubscriptions PushSubscription[]
+  id                 String               @id @default(cuid())
+  name               String // nome de exibição (não precisa ser único)
+  username           String               @unique // apelido normalizado (ex: gabriel.silva)
+  cpfHash            String?              @unique // blind index HMAC-SHA256 para login O(1)
+  cpfEncrypted       String? // CPF cifrado com AES-256-GCM (IV + AAD=userId)
+  role               Role // ADMIN ou TRAINEE — vários usuários por papel são permitidos
+  pinHash            String // hash argon2id da senha (ou PIN legado da v1.0)
+  active             Boolean              @default(true)
+  mustChangePassword Boolean              @default(false)
+  workoutLogs        WorkoutLog[]
+  assignments        WorkoutAssignment[] // treinos direcionados a este usuário (E1.1)
+  progressPhotos     ProgressPhoto[]
+  notesSent          TrainerNote[]        @relation("NotesSent")
+  notesReceived      TrainerNote[]        @relation("NotesReceived")
+  pushSubscriptions  PushSubscription[]
   programAssignments ProgramAssignment[] // programas/desafios dos quais o aluno participa
   favoriteExercises  FavoriteExercise[] // exercícios marcados com estrela
-  createdAt         DateTime             @default(now())
+  accessLogs         AccessLog[]          @relation("AccessLogUser")
+  actedAccessLogs    AccessLog[]          @relation("AccessLogActor")
+  createdAt          DateTime             @default(now())
 }
 
 model MuscleGroup {
@@ -291,4 +298,30 @@ model FavoriteExercise {
 
   @@unique([userId, exerciseId])
   @@index([userId])
+}
+
+/// Auditoria persistida de acessos, tentativas de login e eventos de segurança (v1.1).
+model AccessLog {
+  id               String   @id @default(cuid())
+  event            String
+  userId           String?
+  actorUserId      String?
+  identifierMasked String?
+  ip               String
+  userAgent        String?
+  method           String?
+  path             String?
+  statusCode       Int?
+  reason           String?
+  requestId        String?
+  durationMs       Int?
+  createdAt        DateTime @default(now())
+
+  user  User? @relation("AccessLogUser", fields: [userId], references: [id], onDelete: SetNull)
+  actor User? @relation("AccessLogActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([event, createdAt])
+  @@index([userId, createdAt])
+  @@index([ip, createdAt])
 }
