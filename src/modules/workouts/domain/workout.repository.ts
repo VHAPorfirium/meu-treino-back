@@ -31,6 +31,7 @@ export interface WorkoutRepository {
     name: string;
     dayOfWeek?: number;
     active?: boolean;
+    ownerTrainerId?: string;
   }): Promise<Workout>;
 
   addExercise(
@@ -46,8 +47,8 @@ export interface WorkoutRepository {
 
   findById(id: string): Promise<Workout | null>;
 
-  /** Lista todos os treinos (contagem de exercícios + destinatários) — admin. */
-  listAll(): Promise<any[]>;
+  /** Lista treinos do personal (contagem de exercícios + destinatários). */
+  listAll(ownerTrainerId?: string): Promise<any[]>;
 
   /** Treino com exercícios ordenados + destinatários — admin. */
   findByIdWithExercises(id: string): Promise<WorkoutWithExercises | null>;
@@ -134,6 +135,6 @@ export interface WorkoutRepository {
   /** Copia treino + exercícios (e opcionalmente destinatários) numa transação. */
   duplicate(
     id: string,
-    opts: { name: string; copyAssignees: boolean },
+    opts: { name: string; copyAssignees: boolean; ownerTrainerId?: string },
   ): Promise<Workout>;
 }

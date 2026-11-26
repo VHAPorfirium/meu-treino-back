@@ -120,6 +120,7 @@ describe('ListProgramsUseCase — cálculo de progresso em lote (sem N+1)', () =
       ['u1', 'u2'],
       ['w1'],
       '2026-11-01',
+      ['a1', 'a2'],
     );
 
     expect(result[0].assignments[0].progress).toMatchObject({

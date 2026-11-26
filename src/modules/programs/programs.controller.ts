@@ -3,6 +3,7 @@ import { Role } from '@prisma/client';
 import { Roles } from '../../shared/auth/roles.decorator';
 import { CurrentUser } from '../../shared/auth/current-user.decorator';
 import { AuthUser } from '../../shared/auth/jwt-payload';
+import { TrainerAccessService } from '../links/application/trainer-access.service';
 import { CreateProgramDto } from './application/dto/create-program.dto';
 import { UpdateProgramDto } from './application/dto/update-program.dto';
 import { AssignProgramDto } from './application/dto/assign-program.dto';
@@ -28,13 +29,13 @@ export class ProgramsController {
     private readonly archiveProgramAssignment: ArchiveProgramAssignmentUseCase,
     private readonly getCurrentProgram: GetCurrentProgramUseCase,
     private readonly listMyAchievements: ListMyAchievementsUseCase,
+    private readonly trainerAccess: TrainerAccessService,
   ) {}
 
   // ── leitura do aluno (antes de :id pra não colidir) ────────────────────────
 
   // GET /api/programs/current — { currentProgram } (null quando não está em nenhum).
-  // Embrulhado em objeto porque `null` puro vira corpo vazio e quebra o res.json() do front.
-  @Roles(Role.TRAINEE, Role.ADMIN)
+  @Roles(Role.TRAINEE)
   @Get('current')
   async current(@CurrentUser() authenticatedUser: AuthUser) {
     const currentProgram = await this.getCurrentProgram.execute(authenticatedUser.userId);
@@ -42,73 +43,99 @@ export class ProgramsController {
   }
 
   // GET /api/programs/achievements — medalhas do aluno
-  @Roles(Role.TRAINEE, Role.ADMIN)
+  @Roles(Role.TRAINEE)
   @Get('achievements')
   achievements(@CurrentUser() authenticatedUser: AuthUser) {
     return this.listMyAchievements.execute(authenticatedUser.userId);
   }
 
-  // ── gestão (admin) ─────────────────────────────────────────────────────────
+  // ── gestão (personal) ──────────────────────────────────────────────────────
 
-  // GET /api/programs/users/:userId/current — programa atual de um aluno (perfil no painel)
-  @Roles(Role.ADMIN)
+  // GET /api/programs/users/:userId/current — programa atual de um aluno vinculado
+  @Roles(Role.PERSONAL)
   @Get('users/:userId/current')
-  async currentOfUser(@Param('userId') userId: string) {
+  async currentOfUser(
+    @CurrentUser() trainer: AuthUser,
+    @Param('userId') userId: string,
+  ) {
+    await this.trainerAccess.assertActiveLink(trainer.userId, userId);
     const currentProgram = await this.getCurrentProgram.execute(userId);
     return { currentProgram };
   }
 
-  // GET /api/programs/users/:userId/achievements — medalhas de um aluno
-  @Roles(Role.ADMIN)
+  // GET /api/programs/users/:userId/achievements — medalhas de um aluno vinculado
+  @Roles(Role.PERSONAL)
   @Get('users/:userId/achievements')
-  achievementsOfUser(@Param('userId') userId: string) {
+  async achievementsOfUser(
+    @CurrentUser() trainer: AuthUser,
+    @Param('userId') userId: string,
+  ) {
+    await this.trainerAccess.assertActiveLink(trainer.userId, userId);
     return this.listMyAchievements.execute(userId);
   }
 
-  @Roles(Role.ADMIN)
+  @Roles(Role.PERSONAL)
   @Get()
-  list() {
-    return this.listPrograms.execute();
+  list(@CurrentUser() trainer: AuthUser) {
+    return this.listPrograms.execute(trainer.userId);
   }
 
-  @Roles(Role.ADMIN)
+  @Roles(Role.PERSONAL)
   @Get(':id')
-  detail(@Param('id') programId: string) {
-    return this.getProgram.execute(programId);
+  detail(@CurrentUser() trainer: AuthUser, @Param('id') programId: string) {
+    return this.getProgram.execute(programId, trainer.userId);
   }
 
   // POST /api/programs { name, type, targetWeeks?, targetDays?, workoutIds, userIds }
-  @Roles(Role.ADMIN)
+  @Roles(Role.PERSONAL)
   @Post()
-  create(@Body() createProgramDto: CreateProgramDto) {
-    return this.createProgram.execute(createProgramDto);
+  create(
+    @CurrentUser() trainer: AuthUser,
+    @Body() createProgramDto: CreateProgramDto,
+  ) {
+    return this.createProgram.execute(createProgramDto, trainer.userId);
   }
 
   // PATCH /api/programs/:id { name?, description?, workoutIds? }
-  @Roles(Role.ADMIN)
+  @Roles(Role.PERSONAL)
   @Patch(':id')
-  update(@Param('id') programId: string, @Body() updateProgramDto: UpdateProgramDto) {
-    return this.updateProgram.execute(programId, updateProgramDto);
+  update(
+    @CurrentUser() trainer: AuthUser,
+    @Param('id') programId: string,
+    @Body() updateProgramDto: UpdateProgramDto,
+  ) {
+    return this.updateProgram.execute(programId, updateProgramDto, trainer.userId);
   }
 
-  @Roles(Role.ADMIN)
+  @Roles(Role.PERSONAL)
   @Delete(':id')
-  remove(@Param('id') programId: string) {
-    return this.deleteProgram.execute(programId);
+  remove(@CurrentUser() trainer: AuthUser, @Param('id') programId: string) {
+    return this.deleteProgram.execute(programId, trainer.userId);
   }
 
-  // POST /api/programs/:id/assignments { userIds } — coloca alunos no programa
-  @Roles(Role.ADMIN)
+  // POST /api/programs/:id/assignments { userIds } — coloca alunos vinculados no programa
+  @Roles(Role.PERSONAL)
   @Post(':id/assignments')
   @HttpCode(201)
-  assign(@Param('id') programId: string, @Body() assignProgramDto: AssignProgramDto) {
-    return this.assignProgramToUsers.execute(programId, assignProgramDto.userIds);
+  assign(
+    @CurrentUser() trainer: AuthUser,
+    @Param('id') programId: string,
+    @Body() assignProgramDto: AssignProgramDto,
+  ) {
+    return this.assignProgramToUsers.execute(
+      programId,
+      assignProgramDto.userIds,
+      trainer.userId,
+    );
   }
 
   // PATCH /api/programs/assignments/:assignmentId/archive — tira o aluno do programa
-  @Roles(Role.ADMIN)
+  @Roles(Role.PERSONAL)
   @Patch('assignments/:assignmentId/archive')
-  archive(@Param('assignmentId') assignmentId: string) {
-    return this.archiveProgramAssignment.execute(assignmentId);
+  archive(
+    @CurrentUser() trainer: AuthUser,
+    @Param('assignmentId') assignmentId: string,
+  ) {
+    return this.archiveProgramAssignment.execute(assignmentId, trainer.userId);
   }
 }

@@ -5,6 +5,7 @@ import {
   ProgramRepository,
 } from '../../domain/program.repository';
 import { ProgramProgressService } from '../services/program-progress.service';
+import { assertProgramOwnership } from '../program-ownership';
 
 /** Programa + progresso de cada aluno que está participando (painel do personal). */
 @Injectable()
@@ -15,9 +16,10 @@ export class GetProgramUseCase {
     private readonly programProgressService: ProgramProgressService,
   ) {}
 
-  async execute(programId: string) {
+  async execute(programId: string, trainerId?: string) {
     const program = await this.programRepository.findProgramById(programId);
     if (!program) throw new NotFoundException('Programa não encontrado');
+    assertProgramOwnership(program, trainerId);
 
     const activeAssignments = program.assignments
       .filter((assignment) => assignment.status === ProgramStatus.ACTIVE)

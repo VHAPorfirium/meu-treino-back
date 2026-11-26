@@ -1,14 +1,11 @@
-import {
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
   WORKOUT_REPOSITORY,
   WorkoutRepository,
 } from '../../domain/workout.repository';
 import { AddExerciseDto } from '../dto/add-exercise.dto';
 import { normalizaPrescricao } from '../prescricao';
+import { assertWorkoutOwnership } from '../workout-ownership';
 
 @Injectable()
 export class AddExerciseUseCase {
@@ -17,9 +14,10 @@ export class AddExerciseUseCase {
     private readonly repo: WorkoutRepository,
   ) {}
 
-  async execute(workoutId: string, dto: AddExerciseDto) {
+  async execute(workoutId: string, dto: AddExerciseDto, trainerId?: string) {
     const workout = await this.repo.findById(workoutId);
     if (!workout) throw new NotFoundException('Treino não encontrado');
+    assertWorkoutOwnership(workout, trainerId);
     return this.repo.addExercise(workoutId, {
       ...normalizaPrescricao(dto),
       order: dto.order,

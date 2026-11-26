@@ -3,6 +3,7 @@ import {
   WORKOUT_REPOSITORY,
   WorkoutRepository,
 } from '../../domain/workout.repository';
+import { assertWorkoutOwnership } from '../workout-ownership';
 
 @Injectable()
 export class GetWorkoutUseCase {
@@ -11,9 +12,10 @@ export class GetWorkoutUseCase {
     private readonly repo: WorkoutRepository,
   ) {}
 
-  async execute(id: string) {
+  async execute(id: string, trainerId?: string) {
     const workout = await this.repo.findByIdWithExercises(id);
     if (!workout) throw new NotFoundException('Treino não encontrado');
+    assertWorkoutOwnership(workout, trainerId);
     // expõe `assignees: [{id,name}]` no lugar da tabela de junção crua
     const { assignments, ...rest } = workout;
     return { ...rest, assignees: assignments.map((a) => a.user) };

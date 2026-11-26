@@ -3,6 +3,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import {
@@ -13,19 +14,12 @@ import {
   USER_REPOSITORY,
   UserRepository,
 } from '../../../users/domain/user.repository';
+import { TrainerAccessService } from '../../../links/application/trainer-access.service';
 import { PushService } from '../../../push/application/push.service';
 import { ProgramDurationPolicy } from '../../domain/program-duration-policy';
 import { diaLocal } from '../../../../shared/time/dia-local';
+import { assertProgramOwnership } from '../program-ownership';
 
-/**
- * Coloca alunos num programa.
- *
- * Regra: cada aluno está em no máximo UM programa por vez. Se ele já estiver em
- * outro (ou tiver concluído uma rodada anterior), a participação anterior é
- * arquivada — preservando o relatório/conquista se ela foi concluída — e os
- * treinos dela saem da lista antes de entrar no novo, tudo na mesma transação.
- * Quem já está ATIVO neste mesmo programa é ignorado.
- */
 @Injectable()
 export class AssignProgramToUsersUseCase {
   constructor(
@@ -34,14 +28,16 @@ export class AssignProgramToUsersUseCase {
     @Inject(USER_REPOSITORY)
     private readonly userRepository: UserRepository,
     private readonly pushService: PushService,
+    @Optional() private readonly trainerAccess?: TrainerAccessService,
   ) {}
 
-  async execute(programId: string, userIds: string[]) {
+  async execute(programId: string, userIds: string[], trainerId?: string) {
     const program = await this.programRepository.findProgramById(programId);
     if (!program) throw new NotFoundException('Programa não encontrado');
+    assertProgramOwnership(program, trainerId);
 
     const uniqueUserIds = Array.from(new Set(userIds));
-    await this.ensureAllAreTrainees(uniqueUserIds);
+    await this.ensureAllAreTrainees(uniqueUserIds, trainerId);
 
     const newParticipantIds = await this.programRepository.assignProgramToUsers(
       programId,
@@ -61,15 +57,21 @@ export class AssignProgramToUsersUseCase {
     return this.programRepository.findProgramById(programId);
   }
 
-  async ensureAllAreTrainees(userIds: string[]) {
+  async ensureAllAreTrainees(userIds: string[], trainerId?: string) {
     if (userIds.length === 0) return;
     const allUsers = await this.userRepository.findAll();
     const userById = new Map(allUsers.map((user) => [user.id, user]));
-    const invalidUserIds = userIds.filter((userId) => userById.get(userId)?.role !== Role.TRAINEE);
+    const invalidUserIds = userIds.filter(
+      (userId) => userById.get(userId)?.role !== Role.TRAINEE,
+    );
     if (invalidUserIds.length) {
       throw new BadRequestException(
-        'Só alunos (TRAINEE) existentes podem participar de programas: ' + invalidUserIds.join(', '),
+        'Só alunos (TRAINEE) existentes podem participar de programas: ' +
+          invalidUserIds.join(', '),
       );
+    }
+    if (trainerId && this.trainerAccess) {
+      await this.trainerAccess.assertAllActiveLinks(trainerId, userIds);
     }
   }
 }

@@ -41,6 +41,7 @@ export class ProgramProgressService {
       assignment.userId,
       assignment.program.workouts.map((workout) => workout.id),
       assignment.startDayKey,
+      assignment.id,
     );
 
     const progress = calculateProgramProgress({
@@ -55,7 +56,7 @@ export class ProgramProgressService {
 
   /**
    * Calcula o progresso de várias participações com no máximo 1 consulta ao banco,
-   * evitando N+1 ao listar programas ou inspecionar todos os participantes.
+   * preservando logs de desafios portados via `programAssignmentId`.
    */
   async calculateForAssignments(
     assignments: AssignmentWithProgram[],
@@ -67,6 +68,7 @@ export class ProgramProgressService {
     const tracked: { assignment: AssignmentWithProgram; totalDays: number; workoutIds: Set<string> }[] = [];
     const allUserIds = new Set<string>();
     const allWorkoutIds = new Set<string>();
+    const allAssignmentIds: string[] = [];
     let minStartDayKey: string | null = null;
 
     for (const assignment of assignments) {
@@ -82,25 +84,28 @@ export class ProgramProgressService {
 
       const workoutIds = new Set(assignment.program.workouts.map((w) => w.id));
       tracked.push({ assignment, totalDays, workoutIds });
-      if (workoutIds.size > 0) {
-        allUserIds.add(assignment.userId);
-        for (const wid of workoutIds) allWorkoutIds.add(wid);
-        if (minStartDayKey === null || assignment.startDayKey < minStartDayKey) {
-          minStartDayKey = assignment.startDayKey;
-        }
+      allUserIds.add(assignment.userId);
+      allAssignmentIds.push(assignment.id);
+      for (const wid of workoutIds) allWorkoutIds.add(wid);
+      if (minStartDayKey === null || assignment.startDayKey < minStartDayKey) {
+        minStartDayKey = assignment.startDayKey;
       }
     }
 
     const sessions =
-      allUserIds.size > 0 && allWorkoutIds.size > 0 && minStartDayKey !== null
+      allUserIds.size > 0 && minStartDayKey !== null
         ? await this.programRepository.listCompletedSessionDaysForUsers(
             [...allUserIds],
             [...allWorkoutIds],
             minStartDayKey,
+            allAssignmentIds,
           )
         : [];
 
-    const sessionsByUser = new Map<string, { workoutId: string; dayKey: string }[]>();
+    const sessionsByUser = new Map<
+      string,
+      { workoutId: string; dayKey: string; programAssignmentId?: string | null }[]
+    >();
     for (const session of sessions) {
       const list = sessionsByUser.get(session.userId) ?? [];
       list.push(session);
@@ -110,7 +115,9 @@ export class ProgramProgressService {
     for (const { assignment, totalDays, workoutIds } of tracked) {
       const userSessions = sessionsByUser.get(assignment.userId) ?? [];
       const matchingSessions = userSessions.filter(
-        (s) => s.dayKey >= assignment.startDayKey && workoutIds.has(s.workoutId),
+        (s) =>
+          s.dayKey >= assignment.startDayKey &&
+          (s.programAssignmentId === assignment.id || workoutIds.has(s.workoutId)),
       );
       progressByAssignmentId.set(
         assignment.id,

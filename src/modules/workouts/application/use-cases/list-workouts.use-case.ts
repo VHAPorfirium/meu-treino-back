@@ -11,7 +11,7 @@ export class ListWorkoutsUseCase {
     private readonly repo: WorkoutRepository,
   ) {}
 
-  execute() {
-    return this.repo.listAll();
+  execute(ownerTrainerId?: string) {
+    return this.repo.listAll(ownerTrainerId);
   }
 }

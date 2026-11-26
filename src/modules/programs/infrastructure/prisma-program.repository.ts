@@ -108,17 +108,24 @@ export class PrismaProgramRepository implements ProgramRepository {
     });
   }
 
-  listPrograms(): Promise<ProgramWithDetails[]> {
+  listPrograms(ownerTrainerId?: string): Promise<ProgramWithDetails[]> {
     return this.prisma.trainingProgram.findMany({
+      where: ownerTrainerId ? { ownerTrainerId } : undefined,
       orderBy: { createdAt: 'desc' },
       include: PROGRAM_DETAILS_INCLUDE,
     });
   }
 
-  async findExistingWorkoutIds(workoutIds: string[]): Promise<string[]> {
+  async findExistingWorkoutIds(
+    workoutIds: string[],
+    ownerTrainerId?: string,
+  ): Promise<string[]> {
     if (workoutIds.length === 0) return [];
     const found = await this.prisma.workout.findMany({
-      where: { id: { in: workoutIds } },
+      where: {
+        id: { in: workoutIds },
+        ...(ownerTrainerId ? { ownerTrainerId } : {}),
+      },
       select: { id: true },
     });
     return found.map((w) => w.id);
@@ -290,14 +297,19 @@ export class PrismaProgramRepository implements ProgramRepository {
     userId: string,
     workoutIds: string[],
     startDayKey: string,
+    assignmentId?: string,
   ): Promise<CompletedProgramSession[]> {
-    if (workoutIds.length === 0) return [];
+    if (workoutIds.length === 0 && !assignmentId) return [];
+    const matchClauses: Prisma.WorkoutLogWhereInput[] = [];
+    if (assignmentId) matchClauses.push({ programAssignmentId: assignmentId });
+    if (workoutIds.length > 0) matchClauses.push({ workoutId: { in: workoutIds } });
+
     const completedLogs = await this.prisma.workoutLog.findMany({
       where: {
         userId,
         completed: true,
-        workoutId: { in: workoutIds },
         dayKey: { gte: startDayKey }, // 'YYYY-MM-DD' ordena como texto
+        OR: matchClauses,
       },
       orderBy: { date: 'asc' },
       select: {
@@ -327,19 +339,27 @@ export class PrismaProgramRepository implements ProgramRepository {
     userIds: string[],
     workoutIds: string[],
     minStartDayKey: string,
+    assignmentIds?: string[],
   ): Promise<CompletedProgramSessionDay[]> {
-    if (userIds.length === 0 || workoutIds.length === 0) return [];
+    const hasAssignments = Boolean(assignmentIds && assignmentIds.length > 0);
+    if (userIds.length === 0 || (workoutIds.length === 0 && !hasAssignments)) return [];
+
+    const matchClauses: Prisma.WorkoutLogWhereInput[] = [];
+    if (hasAssignments) matchClauses.push({ programAssignmentId: { in: assignmentIds } });
+    if (workoutIds.length > 0) matchClauses.push({ workoutId: { in: workoutIds } });
+
     return this.prisma.workoutLog.findMany({
       where: {
         userId: { in: userIds },
-        workoutId: { in: workoutIds },
         completed: true,
         dayKey: { gte: minStartDayKey },
+        OR: matchClauses,
       },
       select: {
         userId: true,
         workoutId: true,
         dayKey: true,
+        programAssignmentId: true,
       },
     });
   }

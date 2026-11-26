@@ -6,7 +6,6 @@ import {
 } from '../../domain/program.repository';
 import { ProgramProgressService } from '../services/program-progress.service';
 
-/** Programas com o progresso de quem está participando (cards e dashboard). */
 @Injectable()
 export class ListProgramsUseCase {
   constructor(
@@ -15,8 +14,9 @@ export class ListProgramsUseCase {
     private readonly programProgressService: ProgramProgressService,
   ) {}
 
-  async execute() {
-    const programs = await this.programRepository.listPrograms();
+  async execute(trainerId?: string) {
+    const programs = await this.programRepository.listPrograms(trainerId);
+
     const activeAssignments = programs.flatMap((program) =>
       program.assignments
         .filter((assignment) => assignment.status === ProgramStatus.ACTIVE)

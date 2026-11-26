@@ -9,6 +9,7 @@ import {
   WorkoutRepository,
 } from '../../domain/workout.repository';
 import { ReorderExercisesDto } from '../dto/reorder-exercises.dto';
+import { assertWorkoutOwnership } from '../workout-ownership';
 
 @Injectable()
 export class ReorderExercisesUseCase {
@@ -17,9 +18,14 @@ export class ReorderExercisesUseCase {
     private readonly repo: WorkoutRepository,
   ) {}
 
-  async execute(workoutId: string, dto: ReorderExercisesDto) {
+  async execute(
+    workoutId: string,
+    dto: ReorderExercisesDto,
+    trainerId?: string,
+  ) {
     const workout = await this.repo.findByIdWithExercises(workoutId);
     if (!workout) throw new NotFoundException('Treino não encontrado');
+    assertWorkoutOwnership(workout, trainerId);
 
     // o conjunto enviado precisa ser EXATAMENTE o conjunto de exercícios do treino
     const current = new Set(workout.exercises.map((we) => we.id));
