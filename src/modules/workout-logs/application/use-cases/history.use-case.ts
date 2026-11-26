@@ -11,7 +11,7 @@ export class HistoryUseCase {
     private readonly repo: WorkoutLogRepository,
   ) {}
 
-  execute() {
-    return this.repo.history();
+  execute(opts?: { limit?: number; offset?: number }) {
+    return this.repo.history(opts);
   }
 }

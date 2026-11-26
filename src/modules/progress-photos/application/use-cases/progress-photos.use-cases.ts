@@ -15,18 +15,22 @@ export function getProgressBucket(): string {
 }
 const READ_TTL_SEC = 60 * 60; // 1h
 
-/** Anexa URL assinada de leitura a cada foto. */
+/** Anexa URL assinada de leitura a cada foto em uma única chamada em lote. */
 async function withUrls(
   storage: SupabaseStorageService,
   photos: { id: string; userId: string; path: string; takenAt: Date; note: string | null }[],
 ) {
+  if (photos.length === 0) return [];
   const bucket = getProgressBucket();
-  return Promise.all(
-    photos.map(async (p) => ({
-      ...p,
-      url: await storage.signedReadUrl(bucket, p.path, READ_TTL_SEC),
-    })),
+  const urls = await storage.signedReadUrls(
+    bucket,
+    photos.map((p) => p.path),
+    READ_TTL_SEC,
   );
+  return photos.map((p) => ({
+    ...p,
+    url: urls.get(p.path) ?? null,
+  }));
 }
 
 /** TRAINEE: pede URL assinada pra subir 1 foto. Caminho sempre prefixado pelo userId. */

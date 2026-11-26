@@ -14,6 +14,7 @@ import { AuthUser } from '../../shared/auth/jwt-payload';
 import { OpenSessionDto } from './application/dto/open-session.dto';
 import { PatchExerciseLogDto } from './application/dto/patch-exercise-log.dto';
 import { LastPerformanceQueryDto } from './application/dto/last-performance.query';
+import { HistoryQueryDto } from './application/dto/history.query';
 import { OpenSessionUseCase } from './application/use-cases/open-session.use-case';
 import { PatchExerciseLogUseCase } from './application/use-cases/patch-exercise-log.use-case';
 import { CompleteSessionUseCase } from './application/use-cases/complete-session.use-case';
@@ -88,18 +89,18 @@ export class WorkoutLogsController {
     return this.listAttentionItems.execute();
   }
 
-  // GET /api/workout-logs/history  (ADMIN)
+  // GET /api/workout-logs/history?limit=&offset=  (ADMIN)
   @Roles(Role.ADMIN)
   @Get('history')
-  getHistory() {
-    return this.history.execute();
+  getHistory(@Query() query: HistoryQueryDto) {
+    return this.history.execute(query);
   }
 
-  // GET /api/workout-logs/my-history  (TRAINEE) — histórico da própria aluna
+  // GET /api/workout-logs/my-history?limit=&offset=  (TRAINEE) — histórico da própria aluna
   @Roles(Role.TRAINEE, Role.ADMIN)
   @Get('my-history')
-  getMyHistory(@CurrentUser() user: AuthUser) {
-    return this.myHistory.execute(user.userId);
+  getMyHistory(@CurrentUser() user: AuthUser, @Query() query: HistoryQueryDto) {
+    return this.myHistory.execute(user.userId, query);
   }
 
   // GET /api/workout-logs/progress-summary?userId=  (ADMIN)

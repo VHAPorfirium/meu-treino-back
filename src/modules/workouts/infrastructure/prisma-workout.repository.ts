@@ -365,8 +365,8 @@ export class PrismaWorkoutRepository implements WorkoutRepository {
   ): Promise<void> {
     await this.prisma.$transaction(
       items.map((it) =>
-        this.prisma.workoutExercise.update({
-          where: { id: it.workoutExerciseId },
+        this.prisma.workoutExercise.updateMany({
+          where: { id: it.workoutExerciseId, workoutId },
           data: { order: it.order },
         }),
       ),

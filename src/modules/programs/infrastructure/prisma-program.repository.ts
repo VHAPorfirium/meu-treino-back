@@ -4,6 +4,7 @@ import { PrismaService } from '../../../shared/prisma/prisma.service';
 import {
   AssignmentWithProgram,
   CompletedProgramSession,
+  CompletedProgramSessionDay,
   CreateProgramData,
   CURRENT_ASSIGNMENT_STATUSES,
   PROGRAM_WORKOUT_SELECT,
@@ -240,6 +241,27 @@ export class PrismaProgramRepository implements ProgramRepository {
           load: exerciseLog.loadUsed as number,
         })),
     }));
+  }
+
+  async listCompletedSessionDaysForUsers(
+    userIds: string[],
+    workoutIds: string[],
+    minStartDayKey: string,
+  ): Promise<CompletedProgramSessionDay[]> {
+    if (userIds.length === 0 || workoutIds.length === 0) return [];
+    return this.prisma.workoutLog.findMany({
+      where: {
+        userId: { in: userIds },
+        workoutId: { in: workoutIds },
+        completed: true,
+        dayKey: { gte: minStartDayKey },
+      },
+      select: {
+        userId: true,
+        workoutId: true,
+        dayKey: true,
+      },
+    });
   }
 
   // ── auxiliares ─────────────────────────────────────────────────────────────

@@ -22,6 +22,10 @@ const TABELAS_ESPERADAS = [
   'ProgressPhoto',
   'TrainerNote',
   'PushSubscription',
+  // Programas e favoritos
+  'TrainingProgram',
+  'ProgramAssignment',
+  'FavoriteExercise',
 ] as const;
 
 /**
@@ -35,6 +39,10 @@ const COLUNAS_ESPERADAS: [tabela: string, coluna: string][] = [
   ['WorkoutExercise', 'durationSeconds'],
   ['SetLog', 'durationSeconds'],
   ['WorkoutExerciseLog', 'totalSeconds'],
+  ['Exercise', 'namePt'], // E11
+  ['Exercise', 'targetPt'],
+  ['Exercise', 'equipmentPt'],
+  ['Workout', 'programId'], // Programas
 ];
 
 type Passo = { ok: boolean; code?: string; error?: string };

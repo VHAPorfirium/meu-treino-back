@@ -15,7 +15,7 @@ Abaixo, os controles implementados mapeados ao **OWASP Top 10 (2021)**.
 |---|---|---|
 | **A07 — Auth Failures** | Brute-force no PIN | PIN com hash **argon2id**; **lockout** (5 falhas/min por IP+papel → bloqueio de 5 min); **rate limit** no login (10/min por IP) via `@nestjs/throttler`. |
 | **A05 — Misconfiguration** | Headers/CORS frouxos | **helmet** (headers seguros); **CORS** travado por origem com `credentials`; segredos só em `.env` (fora do git). |
-| **A02 — Sessão/Cripto** | Roubo de token via XSS | JWT movido pra **cookie httpOnly + SameSite** (invisível ao JS); `Secure`+`SameSite=None` em produção. |
+| **A02 — Sessão/Cripto** | Roubo de token via XSS | JWT movido pra **cookie httpOnly + SameSite=Lax** (invisível ao JS, servido same-origin via proxy `/api`); `Secure` em produção. |
 | **A03 — Injection** | SQL injection / payload | **Prisma** (queries parametrizadas); **class-validator** com `whitelist` + `forbidNonWhitelisted`. |
 | **A09 — Logging & Monitoring** | Ataque invisível | **Audit log estruturado (JSON, pino)**: `auth.login.success/failure/locked` e `auth.logout` com `ip`, `role`, `requestId`, `attempt`. Base pra dashboard/alerta. |
 | **A06 — Componentes vulneráveis** | Dependências | Rodar `npm audit`; próximo passo: Dependabot + Trivy na imagem Docker. |
@@ -28,7 +28,7 @@ for i in $(seq 1 7); do
   curl -s -o /dev/null -w "tentativa $i -> %{http_code}\n" \
     -X POST http://localhost:3000/api/auth/login \
     -H 'Content-Type: application/json' \
-    -d '{"role":"TRAINEE","pin":"0000"}'
+    -d '{"pin":"0000"}'
 done
 # as primeiras dão 401; a partir da 5ª o lockout responde 429 (Too Many Requests)
 ```
@@ -38,7 +38,7 @@ done
 docker compose logs api | grep '"kind":"security"'
 ```
 
-**3. Cookie httpOnly** — confira que o login seta `Set-Cookie: mt_token=...; HttpOnly`:
+**3. Cookie httpOnly** — confira que o login seta `Set-Cookie: mt_token=...; HttpOnly; SameSite=Lax`:
 ```bash
 curl -i -X POST http://localhost:3000/api/auth/login \
   -H 'Content-Type: application/json' \
@@ -58,7 +58,7 @@ Uma linha JSON por evento (`kind:"security"`, `app:"ritmo-api"`), sempre com `ip
 | `authz.denied` | warn | `RolesGuard` — 403 (`requiredRoles`, `role`, `userId`) |
 | `ratelimit.exceeded` | warn | `ThrottlerLogFilter` — 429 do rate limit global |
 
-`request-id` em toda requisição (header `x-request-id`, gerado se não vier) pra correlacionar erro ↔ evento.
+`request-id` em toda requisição (header `x-request-id`, validado por allowlist e gerado se ausente/inválido) pra correlacionar erro ↔ evento.
 
 ### Hardening: IP confiável (bypass do lockout fechado)
 Antes, `clientIp()` lia o **primeiro** `X-Forwarded-For` — controlado pelo cliente. Bastava mandar um IP diferente por request pra nunca cair no lockout por IP. Agora a API usa `req.ip` com `trust proxy` = `TRUST_PROXY_HOPS` (Nginx/VPS direto = 1; via proxy do Next na Vercel = 2), e o header forjado é ignorado. Reproduza o "antes/depois" com `ops/attack-sim.sh N URL <ip-falso>`.
@@ -70,7 +70,7 @@ Antes, `clientIp()` lia o **primeiro** `X-Forwarded-For` — controlado pelo cli
 API (stdout JSON) → Docker json-file → **Alloy** (`ops/alloy/config.alloy`) → **Loki** (`ops/loki`) → **Grafana** (`ops/grafana/provisioning`, tudo provisionado por arquivo). Grafana em http://localhost:3002 (admin/admin). Só `app`, `kind`, `level`, `event` viram **labels** no Loki; `ip`/`requestId`/`userId` ficam no JSON (`| json` na query) — cardinalidade controlada.
 
 - Dashboard **"Ritmo · Segurança (mini-SIEM)"** (`security.json`): tentativas/hora, taxa de falha, top IPs, timeline de lockouts, sucesso×falha, latência p50/p95 do login, 401/403/429 por rota, feed bruto.
-- Alertas (`rules.yaml`): **brute-force por IP** (>5 falhas/1min) e **global** (>30/1min) → contact point **Discord** (`DISCORD_WEBHOOK_URL` no `.env`, nunca commitado).
+- Alertas (`rules.yaml`): **brute-force por IP** (>= 5 falhas/1min) e **global** (>= 30/1min) → contact point **Discord** (`DISCORD_WEBHOOK_URL` no `.env`, nunca commitado).
 - Simulação: `./ops/attack-sim.sh` (12 tentativas com PIN errado → 401…401 → 429).
 
 ### Supply-chain

@@ -11,7 +11,7 @@ export class MyHistoryUseCase {
     private readonly repo: WorkoutLogRepository,
   ) {}
 
-  execute(userId: string) {
-    return this.repo.historyByUser(userId);
+  execute(userId: string, opts?: { limit?: number; offset?: number }) {
+    return this.repo.historyByUser(userId, opts);
   }
 }

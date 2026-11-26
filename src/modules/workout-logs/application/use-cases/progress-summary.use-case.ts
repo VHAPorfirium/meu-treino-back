@@ -1,10 +1,6 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ExerciseStatus } from '@prisma/client';
 import { PrismaService } from '../../../../shared/prisma/prisma.service';
-import {
-  WORKOUT_LOG_REPOSITORY,
-  WorkoutLogRepository,
-} from '../../domain/workout-log.repository';
 import { CacheService, TTL } from '../../../../shared/cache/cache.service';
 import {
   diaLocal,
@@ -15,8 +11,6 @@ import {
 @Injectable()
 export class ProgressSummaryUseCase {
   constructor(
-    @Inject(WORKOUT_LOG_REPOSITORY)
-    private readonly repo: WorkoutLogRepository,
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
   ) {}
@@ -57,8 +51,12 @@ export class ProgressSummaryUseCase {
       include: {
         exerciseLogs: {
           include: {
-            workoutExercise: { include: { exercise: true } },
-            actualExercise: { select: { id: true, name: true } },
+            workoutExercise: {
+              select: {
+                exercise: { select: { id: true, name: true, namePt: true } },
+              },
+            },
+            actualExercise: { select: { id: true, name: true, namePt: true } },
           },
         },
       },
@@ -186,18 +184,19 @@ export class ProgressSummaryUseCase {
     for (const l of logs) {
       const k = logDay(l);
       for (const e of l.exerciseLogs) {
-        const baseName = e.workoutExercise?.exercise?.name ?? '—';
+        const baseEx = e.workoutExercise?.exercise;
+        const baseName = baseEx?.namePt || baseEx?.name || '—';
         if (e.status === ExerciseStatus.SKIPPED)
           skipped[baseName] = (skipped[baseName] ?? 0) + 1;
         if (e.status === ExerciseStatus.REPLACED) {
-          const toName = e.actualExercise?.name ?? '—';
+          const toName = e.actualExercise?.namePt || e.actualExercise?.name || '—';
           replaced[`${baseName} → ${toName}`] =
             (replaced[`${baseName} → ${toName}`] ?? 0) + 1;
         }
         if (e.loadUsed != null) {
           const eff =
             e.status === ExerciseStatus.REPLACED && e.actualExercise
-              ? e.actualExercise.name
+              ? e.actualExercise.namePt || e.actualExercise.name
               : baseName;
           (loadByExercise[eff] ??= []).push({
             date: k,

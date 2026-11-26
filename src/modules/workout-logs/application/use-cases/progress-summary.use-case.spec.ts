@@ -1,7 +1,6 @@
 import { ExerciseStatus } from '@prisma/client';
 import { CacheService } from '../../../../shared/cache/cache.service';
 import { PrismaService } from '../../../../shared/prisma/prisma.service';
-import { WorkoutLogRepository } from '../../domain/workout-log.repository';
 import { ProgressSummaryUseCase } from './progress-summary.use-case';
 
 describe('ProgressSummaryUseCase — fuso local (dayKey)', () => {
@@ -60,11 +59,7 @@ describe('ProgressSummaryUseCase — fuso local (dayKey)', () => {
       },
     } as unknown as PrismaService;
 
-    const useCase = new ProgressSummaryUseCase(
-      {} as WorkoutLogRepository,
-      prisma,
-      {} as CacheService,
-    );
+    const useCase = new ProgressSummaryUseCase(prisma, {} as CacheService);
 
     // "Agora": segunda-feira 2026-09-14 às 23h00 BRT (= 2026-09-15T02:00:00Z)
     const now = new Date('2026-09-15T02:00:00Z');
@@ -92,5 +87,72 @@ describe('ProgressSummaryUseCase — fuso local (dayKey)', () => {
       { date: '2026-09-14', loadUsed: 45 },
     ]);
     expect(summary.recentNotes[0].date).toBe('2026-09-13');
+  });
+
+  it('usa namePt com fallback para name em pulados, trocados, carga, ranking e notas', async () => {
+    const prisma = {
+      workoutLog: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'log-1',
+            dayKey: '2026-09-14',
+            date: new Date('2026-09-14T15:00:00Z'),
+            completed: true,
+            exerciseLogs: [
+              {
+                status: ExerciseStatus.SKIPPED,
+                loadUsed: null,
+                setsCompleted: null,
+                totalSeconds: null,
+                note: 'Joelho doendo',
+                actualExercise: null,
+                workoutExercise: {
+                  exercise: { id: 'e1', name: 'barbell squat', namePt: 'Agachamento livre' },
+                },
+              },
+              {
+                status: ExerciseStatus.REPLACED,
+                loadUsed: 60,
+                setsCompleted: 4,
+                totalSeconds: null,
+                note: null,
+                actualExercise: { id: 'e2', name: 'leg press', namePt: 'Leg press 45°' },
+                workoutExercise: {
+                  exercise: { id: 'e1', name: 'barbell squat', namePt: 'Agachamento livre' },
+                },
+              },
+              {
+                status: ExerciseStatus.DONE,
+                loadUsed: 20,
+                setsCompleted: 3,
+                totalSeconds: null,
+                note: null,
+                actualExercise: null,
+                workoutExercise: {
+                  exercise: { id: 'e3', name: 'plank', namePt: null },
+                },
+              },
+            ],
+          },
+        ]),
+      },
+    } as unknown as PrismaService;
+
+    const useCase = new ProgressSummaryUseCase(prisma, {} as CacheService);
+
+    const summary = await useCase.calcular('aluna-1', new Date('2026-09-14T18:00:00Z'));
+
+    expect(summary.mostSkipped).toEqual([{ exercise: 'Agachamento livre', count: 1 }]);
+    expect(summary.mostReplaced).toEqual([
+      { from: 'Agachamento livre', to: 'Leg press 45°', count: 1 },
+    ]);
+    expect(summary.loadProgression.map((lp) => lp.exercise)).toEqual(['Leg press 45°', 'plank']);
+    expect(summary.recentNotes[0].exercise).toBe('Agachamento livre');
+    expect(summary.ranking).toEqual(
+      expect.arrayContaining([
+        { name: 'Agachamento livre', type: 'skip', count: 1 },
+        { name: 'Agachamento livre', type: 'swap', count: 1 },
+      ]),
+    );
   });
 });

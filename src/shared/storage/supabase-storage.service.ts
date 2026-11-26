@@ -61,6 +61,33 @@ export class SupabaseStorageService {
     return data.signedUrl;
   }
 
+  /** URLs assinadas pra LEITURA em lote (evita N+1 HTTP na listagem de fotos). */
+  async signedReadUrls(
+    bucket: string,
+    paths: string[],
+    expiresInSec = 3600,
+  ): Promise<Map<string, string | null>> {
+    const urls = new Map<string, string | null>();
+    if (paths.length === 0) return urls;
+
+    const { data, error } = await this.storage()
+      .from(bucket)
+      .createSignedUrls(paths, expiresInSec);
+
+    if (error || !data) {
+      this.log.warn(`signedReadUrls falhou: ${error?.message ?? 'sem dados'}`);
+      for (const path of paths) urls.set(path, null);
+      return urls;
+    }
+
+    for (const item of data) {
+      if (item.path) {
+        urls.set(item.path, item.error ? null : (item.signedUrl ?? null));
+      }
+    }
+    return urls;
+  }
+
   async remove(bucket: string, paths: string[]) {
     if (!paths.length) return;
     const { error } = await this.storage().from(bucket).remove(paths);
