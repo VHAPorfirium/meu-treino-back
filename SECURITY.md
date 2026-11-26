@@ -74,7 +74,7 @@ API (stdout JSON) → Docker json-file → **Alloy** (`ops/alloy/config.alloy`) 
 - Simulação: `./ops/attack-sim.sh` (12 tentativas com PIN errado → 401…401 → 429).
 
 ### CI & Supply-chain
-`.github/workflows/deploy-producao.yml` executa geração do Prisma, checagem de tipos (`tsc --noEmit`) e suíte de testes (`npm test -- --ci`) em todo `pull_request` e `push` para `main`, e dispara o deploy na VPS (`ops/deploy-vps.sh`) apenas em `push`/`workflow_dispatch` quando os testes passam. Dependências são auditadas com `npm audit`.
+`.github/workflows/deploy-producao.yml` sobe um `postgres:16-alpine` de serviço em todo `pull_request` e `push` para `main`, valida `prisma validate` / `prisma migrate deploy` (do zero + idempotência + zero drift) / `npm run db:smoke`, checa tipos (`tsc --noEmit`), executa `npm run build` e a suíte de testes (`npm test -- --ci`), e dispara o deploy na VPS (`ops/deploy-vps.sh`) apenas em `push`/`workflow_dispatch` quando tudo passa. Dependências são auditadas com `npm audit`.
 
 ## Próximos passos
 - Adicionar `.github/dependabot.yml` (npm/Docker/Actions) e scan da imagem Docker com **Trivy** no CI.
