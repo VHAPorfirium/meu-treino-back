@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ExerciseStatus, Role, WorkoutLog } from '@prisma/client';
+import { ExerciseStatus, Prisma, Role, WorkoutLog } from '@prisma/client';
 import { PrismaService } from '../../../shared/prisma/prisma.service';
 import {
   LastPerformanceRecord,
@@ -11,19 +11,35 @@ import {
 import { ExercisePerformanceRecord } from '../domain/exercise-stats-calculator';
 import { TraineeActivity } from '../domain/attention-rules';
 
+const DEFAULT_HISTORY_LIMIT = 100;
+const MAX_HISTORY_LIMIT = 200;
+
+function clampHistoryLimit(limit?: number): number {
+  if (!limit || !Number.isFinite(limit)) return DEFAULT_HISTORY_LIMIT;
+  return Math.min(Math.max(Math.trunc(limit), 1), MAX_HISTORY_LIMIT);
+}
+
 /** include padrão: logs de exercício com as séries (E4) ordenadas. */
 const ENTRIES_INCLUDE = {
   exerciseLogs: { include: { sets: { orderBy: { setNumber: 'asc' as const } } } },
 };
 
-/** include p/ histórico: joins de exercício + séries. */
+const HISTORY_EXERCISE_SELECT = {
+  id: true,
+  name: true,
+  namePt: true,
+  equipment: true,
+  equipmentPt: true,
+};
+
+/** include p/ histórico: joins enxutos de exercício (com namePt, sem blobs de instruções) + séries. */
 const HISTORY_INCLUDE = {
   workout: { select: { id: true, name: true, program: { select: { id: true, name: true, type: true } } } },
   user: { select: { id: true, name: true } },
   exerciseLogs: {
     include: {
-      workoutExercise: { include: { exercise: true } },
-      actualExercise: { select: { id: true, name: true, equipment: true } },
+      workoutExercise: { select: { id: true, exercise: { select: HISTORY_EXERCISE_SELECT } } },
+      actualExercise: { select: HISTORY_EXERCISE_SELECT },
       sets: { orderBy: { setNumber: 'asc' as const } },
     },
   },
@@ -101,17 +117,24 @@ export class PrismaWorkoutLogRepository implements WorkoutLogRepository {
     });
   }
 
-  historyByUser(userId: string): Promise<any[]> {
+  historyByUser(
+    userId: string,
+    opts?: { limit?: number; offset?: number },
+  ): Promise<any[]> {
     return this.prisma.workoutLog.findMany({
       where: { userId },
       orderBy: { date: 'desc' },
+      take: clampHistoryLimit(opts?.limit),
+      skip: Math.max(0, Math.trunc(opts?.offset ?? 0)),
       include: HISTORY_INCLUDE,
     });
   }
 
-  history(): Promise<any[]> {
+  history(opts?: { limit?: number; offset?: number }): Promise<any[]> {
     return this.prisma.workoutLog.findMany({
       orderBy: { date: 'desc' },
+      take: clampHistoryLimit(opts?.limit),
+      skip: Math.max(0, Math.trunc(opts?.offset ?? 0)),
       include: HISTORY_INCLUDE,
     });
   }
@@ -182,18 +205,29 @@ export class PrismaWorkoutLogRepository implements WorkoutLogRepository {
     exerciseIds: string[],
     beforeDayKey: string,
   ): Promise<LastPerformanceRecord[]> {
-    if (exerciseIds.length === 0) return [];
+    const uniqueExerciseIds = Array.from(new Set(exerciseIds));
+    if (uniqueExerciseIds.length === 0) return [];
+
+    // DISTINCT ON por exercício efetivo evita o truncamento silencioso de
+    // exercícios antigos quando outros exercícios do mesmo treino têm muitas sessões.
+    const latestRows = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT DISTINCT ON (COALESCE(wel."actualExerciseId", we."exerciseId"))
+        wel."id"
+      FROM "WorkoutExerciseLog" wel
+      INNER JOIN "WorkoutLog" wl ON wl."id" = wel."workoutLogId"
+      INNER JOIN "WorkoutExercise" we ON we."id" = wel."workoutExerciseId"
+      WHERE wl."userId" = ${userId}
+        AND wl."dayKey" < ${beforeDayKey}
+        AND wel."status"::text IN ('DONE', 'REPLACED')
+        AND COALESCE(wel."actualExerciseId", we."exerciseId") IN (${Prisma.join(uniqueExerciseIds)})
+      ORDER BY COALESCE(wel."actualExerciseId", we."exerciseId"), wl."date" DESC, wel."id" DESC
+    `;
+
+    if (latestRows.length === 0) return [];
+
     const performedLogs = await this.prisma.workoutExerciseLog.findMany({
-      where: {
-        workoutLog: { userId, dayKey: { lt: beforeDayKey } },
-        status: { in: [ExerciseStatus.DONE, ExerciseStatus.REPLACED] },
-        OR: [
-          { actualExerciseId: { in: exerciseIds } },
-          { actualExerciseId: null, workoutExercise: { exerciseId: { in: exerciseIds } } },
-        ],
-      },
+      where: { id: { in: latestRows.map((row) => row.id) } },
       orderBy: { workoutLog: { date: 'desc' } },
-      take: 300,
       select: {
         loadUsed: true,
         totalSeconds: true,
@@ -210,7 +244,7 @@ export class PrismaWorkoutLogRepository implements WorkoutLogRepository {
     const lastPerformanceByExerciseId = new Map<string, LastPerformanceRecord>();
     for (const performedLog of performedLogs) {
       const exerciseId = performedLog.actualExerciseId ?? performedLog.workoutExercise.exerciseId;
-      if (lastPerformanceByExerciseId.has(exerciseId)) continue; // já veio o mais recente
+      if (lastPerformanceByExerciseId.has(exerciseId)) continue;
       lastPerformanceByExerciseId.set(exerciseId, {
         exerciseId,
         performedAt: performedLog.workoutLog.date,

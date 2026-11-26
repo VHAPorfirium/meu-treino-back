@@ -73,9 +73,12 @@ export interface WorkoutLogRepository {
 
   complete(id: string): Promise<WorkoutLog>;
 
-  history(): Promise<any[]>;
+  history(opts?: { limit?: number; offset?: number }): Promise<any[]>;
 
-  historyByUser(userId: string): Promise<any[]>;
+  historyByUser(
+    userId: string,
+    opts?: { limit?: number; offset?: number },
+  ): Promise<any[]>;
 
   /** Todos os exercise logs com joins p/ analytics. */
   allExerciseLogs(since?: Date): Promise<any[]>;

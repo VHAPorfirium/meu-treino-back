@@ -17,20 +17,24 @@ export class ListProgramsUseCase {
 
   async execute() {
     const programs = await this.programRepository.listPrograms();
-    return Promise.all(
-      programs.map(async (program) => ({
-        ...program,
-        assignments: await Promise.all(
-          program.assignments.map(async (assignment) => {
-            if (assignment.status !== ProgramStatus.ACTIVE) return { ...assignment, progress: null };
-            const { progress } = await this.programProgressService.calculateForAssignment({
-              ...assignment,
-              program,
-            });
-            return { ...assignment, progress };
-          }),
-        ),
-      })),
+    const activeAssignments = programs.flatMap((program) =>
+      program.assignments
+        .filter((assignment) => assignment.status === ProgramStatus.ACTIVE)
+        .map((assignment) => ({ ...assignment, program })),
     );
+
+    const progressByAssignmentId =
+      await this.programProgressService.calculateForAssignments(activeAssignments);
+
+    return programs.map((program) => ({
+      ...program,
+      assignments: program.assignments.map((assignment) => ({
+        ...assignment,
+        progress:
+          assignment.status === ProgramStatus.ACTIVE
+            ? (progressByAssignmentId.get(assignment.id) ?? null)
+            : null,
+      })),
+    }));
   }
 }

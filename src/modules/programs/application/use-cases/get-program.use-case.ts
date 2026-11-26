@@ -19,16 +19,20 @@ export class GetProgramUseCase {
     const program = await this.programRepository.findProgramById(programId);
     if (!program) throw new NotFoundException('Programa não encontrado');
 
-    const assignmentsWithProgress = await Promise.all(
-      program.assignments.map(async (assignment) => {
-        if (assignment.status !== ProgramStatus.ACTIVE) return { ...assignment, progress: null };
-        const { progress } = await this.programProgressService.calculateForAssignment({
-          ...assignment,
-          program: { ...program, workouts: program.workouts },
-        });
-        return { ...assignment, progress };
-      }),
-    );
+    const activeAssignments = program.assignments
+      .filter((assignment) => assignment.status === ProgramStatus.ACTIVE)
+      .map((assignment) => ({ ...assignment, program }));
+
+    const progressByAssignmentId =
+      await this.programProgressService.calculateForAssignments(activeAssignments);
+
+    const assignmentsWithProgress = program.assignments.map((assignment) => ({
+      ...assignment,
+      progress:
+        assignment.status === ProgramStatus.ACTIVE
+          ? (progressByAssignmentId.get(assignment.id) ?? null)
+          : null,
+    }));
 
     return { ...program, assignments: assignmentsWithProgress };
   }

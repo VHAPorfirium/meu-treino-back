@@ -41,6 +41,13 @@ export interface CompletedProgramSession extends SessionLoadRecords {
   dayKey: string;
 }
 
+/** Resumo mínimo para cálculo em lote de progresso de múltiplos participantes. */
+export interface CompletedProgramSessionDay {
+  userId: string;
+  workoutId: string;
+  dayKey: string;
+}
+
 /** Status em que o aluno ainda "está" no programa (aparece na tela dele). */
 export const CURRENT_ASSIGNMENT_STATUSES: ProgramStatus[] = [
   ProgramStatus.ACTIVE,
@@ -84,4 +91,14 @@ export interface ProgramRepository {
     workoutIds: string[],
     startDayKey: string,
   ): Promise<CompletedProgramSession[]>;
+
+  /**
+   * Busca em lote os dias concluídos de vários participantes/treinos a partir do
+   * menor `startDayKey`, eliminando N+1 em ListProgramsUseCase e GetProgramUseCase.
+   */
+  listCompletedSessionDaysForUsers(
+    userIds: string[],
+    workoutIds: string[],
+    minStartDayKey: string,
+  ): Promise<CompletedProgramSessionDay[]>;
 }
