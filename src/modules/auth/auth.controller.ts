@@ -8,8 +8,10 @@ import {
   Res,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import { Role } from '@prisma/client';
 import type { Request, Response } from 'express';
 import { Public } from '../../shared/auth/public.decorator';
+import { Roles } from '../../shared/auth/roles.decorator';
 import { AllowPendingPasswordChange } from '../../shared/auth/allow-pending-password-change.decorator';
 import { CurrentUser } from '../../shared/auth/current-user.decorator';
 import { AuthUser } from '../../shared/auth/jwt-payload';
@@ -83,12 +85,16 @@ export class AuthController {
   }
 
   // GET /api/auth/linked-profiles — lista outros perfis ativos no mesmo CPF (PERSONAL <-> TRAINEE)
+  @Roles(Role.PERSONAL, Role.TRAINEE)
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   @Get('linked-profiles')
   linkedProfiles(@CurrentUser() user: AuthUser) {
     return this.switchProfileUseCase.listLinkedProfiles(user.userId);
   }
 
   // POST /api/auth/switch-profile { role } — troca de perfil ativo mantendo o mesmo CPF
+  @Roles(Role.PERSONAL, Role.TRAINEE)
+  @Throttle({ default: { ttl: 60_000, limit: 15 } })
   @Post('switch-profile')
   @HttpCode(200)
   async switchProfile(

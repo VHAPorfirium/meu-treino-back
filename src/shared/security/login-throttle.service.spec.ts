@@ -21,22 +21,43 @@ describe('LoginThrottleService', () => {
     expect(svc.status(key).locked).toBe(false);
   });
 
-  it('ativa o teto global na 30ª falha distribuída entre IPs distintos', () => {
+  it('NÃO bloqueia logins de outros IPs após 30+ falhas distribuídas (sem DoS global), só sinaliza telemetria', () => {
     const svc = new LoginThrottleService();
-    let lastResult: ReturnType<LoginThrottleService['recordFailure']> = {
-      attempts: 0,
-      lockedNow: false,
-    };
+    const results: ReturnType<LoginThrottleService['recordFailure']>[] = [];
 
-    for (let i = 1; i <= 30; i++) {
-      lastResult = svc.recordFailure(svc.key(`198.51.100.${i}`));
+    // 3 IPs × 10 falhas (cada uma com identificador diferente) = 30 falhas/min
+    for (let ipIdx = 1; ipIdx <= 3; ipIdx++) {
+      for (let i = 1; i <= 10; i++) {
+        results.push(svc.recordFailure(svc.key(`198.51.100.${ipIdx}`, `user-${i}`)));
+      }
     }
 
-    expect(lastResult).toEqual({ attempts: 30, lockedNow: true, scope: 'global' });
-    expect(svc.status(svc.key('192.0.2.99'))).toMatchObject({
+    expect(results.filter((r) => r.globalAlert)).toHaveLength(1);
+    expect(results.some((r) => r.scope === 'global')).toBe(false);
+    // ADMIN/RECEPTION em outro IP continuam conseguindo logar
+    expect(svc.status(svc.key('192.0.2.99', 'admin'))).toMatchObject({ locked: false });
+    expect(svc.acquireAttempt(svc.key('192.0.2.99', 'admin')).locked).toBe(false);
+  });
+
+  it('bloqueia SÓ o IP que faz password spraying (15 identificadores distintos em 1 min)', () => {
+    const svc = new LoginThrottleService();
+    let last: ReturnType<LoginThrottleService['recordFailure']> = { attempts: 0, lockedNow: false };
+    for (let i = 1; i <= 15; i++) {
+      last = svc.recordFailure(svc.key('203.0.113.7', `cpf-${i}`));
+    }
+    expect(last).toMatchObject({ lockedNow: true, scope: 'spray', attempts: 15 });
+    expect(svc.status(svc.key('203.0.113.7', 'outro-cpf'))).toMatchObject({
       locked: true,
-      scope: 'global',
+      scope: 'spray',
     });
+    expect(svc.status(svc.key('203.0.113.8', 'outro-cpf')).locked).toBe(false);
+  });
+
+  it('suporta IPv6 sem confundir o agregado por IP', () => {
+    const svc = new LoginThrottleService();
+    for (let i = 1; i <= 15; i++) svc.recordFailure(svc.key('2001:db8::1', `u-${i}`));
+    expect(svc.status(svc.key('2001:db8::1', 'x')).locked).toBe(true);
+    expect(svc.status(svc.key('2001:db8::2', 'x')).locked).toBe(false);
   });
 
   it('remove buckets expirados automaticamente para evitar vazamento de memória', () => {
@@ -46,14 +67,14 @@ describe('LoginThrottleService', () => {
 
     svc.recordFailure(svc.key('10.0.0.1'));
     svc.recordFailure(svc.key('10.0.0.2'));
-    expect(svc.size()).toBe(3); // 2 IPs + 1 global
+    expect(svc.size()).toBe(5); // 2 pares + 2 agregados por IP + 1 telemetria global
 
     // Avança além da janela (60s) e do intervalo de limpeza
     now += 120_000;
     svc.recordFailure(svc.key('10.0.0.3'));
 
-    // 10.0.0.1 e 10.0.0.2 expiraram e foram podados; restam apenas 10.0.0.3 e global
-    expect(svc.size()).toBe(2);
+    // 10.0.0.1 e 10.0.0.2 expiraram e foram podados; restam 10.0.0.3 (par + agregado) e global
+    expect(svc.size()).toBe(3);
   });
 
   it('bloqueia a 6ª tentativa concorrente do mesmo IP antes do término das 5 em andamento (TOCTOU)', () => {
@@ -72,15 +93,17 @@ describe('LoginThrottleService', () => {
     expect(svc.acquireAttempt(key).locked).toBe(false);
   });
 
-  it('bloqueia a 31ª tentativa concorrente distribuída pelo teto global antes de concluir argon2', () => {
+  it('bloqueia a 16ª tentativa concorrente do mesmo IP (identificadores distintos) antes de concluir argon2', () => {
     const svc = new LoginThrottleService();
 
-    for (let i = 1; i <= 30; i++) {
-      expect(svc.acquireAttempt(svc.key(`198.51.100.${i}`)).locked).toBe(false);
+    for (let i = 1; i <= 15; i++) {
+      expect(svc.acquireAttempt(svc.key('198.51.100.20', `u-${i}`)).locked).toBe(false);
     }
 
-    const overflow = svc.acquireAttempt(svc.key('192.0.2.77'));
-    expect(overflow).toMatchObject({ locked: true, scope: 'global', attempts: 30 });
+    const overflow = svc.acquireAttempt(svc.key('198.51.100.20', 'u-16'));
+    expect(overflow).toMatchObject({ locked: true, scope: 'spray', attempts: 15 });
+    // Outro IP não é afetado
+    expect(svc.acquireAttempt(svc.key('192.0.2.77', 'u-1')).locked).toBe(false);
   });
 
   it('mantém contagem inFlight consistente quando uma tentativa tem sucesso enquanto outra ainda roda', () => {

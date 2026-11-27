@@ -163,11 +163,12 @@ export class HealthController {
       out.migrations = falha(e);
     }
 
-    // 3) reproduz, passo a passo, exatamente o que GET /api/workouts faz
+    // 3) reproduz, passo a passo (amostra limitada), o que GET /api/workouts faz
     const listAll: Record<string, Passo | number> = {};
     let ids: string[] = [];
     try {
       const rows = await this.prisma.workout.findMany({
+        take: 5,
         orderBy: [{ active: 'desc' }, { dayOfWeek: 'asc' }, { createdAt: 'desc' }],
         include: { _count: { select: { exercises: true } } },
       });
@@ -179,6 +180,7 @@ export class HealthController {
     }
     try {
       const a = await this.prisma.workoutAssignment.findMany({
+        take: 5,
         where: { workoutId: { in: ids } },
         include: { user: { select: { id: true, name: true } } },
       });

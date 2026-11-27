@@ -133,7 +133,20 @@ export class LoginUseCase {
       extra?: { userId?: string; role?: string },
     ): never => {
       settled = true;
-      const { attempts, lockedNow, scope } = this.throttle.completeFailure(key);
+      const { attempts, lockedNow, scope, globalAlert } = this.throttle.completeFailure(key);
+      if (globalAlert) {
+        // Telemetria apenas: volume global alto de falhas (possível ataque distribuído).
+        // Não bloqueia ninguém — o bloqueio é por par IP+identificador e por IP agregado.
+        this.security.event('auth.login.failure', {
+          ip: ctx.ip,
+          requestId: ctx.requestId,
+          method: 'POST',
+          path: '/api/auth/login',
+          statusCode: 401,
+          reason: 'global_failure_spike',
+          scope: 'global',
+        });
+      }
       this.security.event('auth.login.failure', {
         ip: ctx.ip,
         userAgent: ctx.userAgent,

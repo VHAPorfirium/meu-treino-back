@@ -8,6 +8,7 @@ import {
   Req,
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
+import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { CurrentUser } from '../../shared/auth/current-user.decorator';
 import { AuthUser } from '../../shared/auth/jwt-payload';
@@ -37,7 +38,9 @@ export class LinksController {
   ) {}
 
   // POST /api/links/request { username }  (PERSONAL)
+  // Rate limit dedicado contra enumeração de apelidos / spam de convites.
   @Roles(Role.PERSONAL)
+  @Throttle({ default: { ttl: 60_000, limit: 20 } })
   @Post('request')
   request(
     @CurrentUser() user: AuthUser,
