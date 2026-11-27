@@ -9,6 +9,7 @@ export interface UserAuthSnapshot {
   username: string;
   active: boolean;
   mustChangePassword: boolean;
+  tokenVersion: number;
 }
 
 interface CacheEntry {
@@ -21,7 +22,7 @@ const MAX_ENTRIES = 5_000;
 
 /**
  * Cache curto (30s) do estado de autenticação do usuário (`active`, `mustChangePassword`,
- * `role`, `name`, `username`) usado pelo `JwtStrategy`.
+ * `tokenVersion`, `role`, `name`, `username`) usado pelo `JwtStrategy`.
  *
  * Evita bater no Postgres a cada request autenticado e permite invalidação imediata
  * (`invalidate(userId)`) ao desativar conta, redefinir senha ou alterar cadastro.
@@ -48,6 +49,7 @@ export class UserStatusCacheService {
         username: true,
         active: true,
         mustChangePassword: true,
+        tokenVersion: true,
       },
     });
 

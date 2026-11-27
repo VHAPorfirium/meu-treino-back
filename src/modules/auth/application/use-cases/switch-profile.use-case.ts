@@ -23,11 +23,19 @@ export interface SwitchProfileResult {
   };
 }
 
+const SWITCHABLE_ROLES: ReadonlySet<Role> = new Set([
+  Role.PERSONAL,
+  Role.TRAINEE,
+]);
+
 /**
- * Permite que uma pessoa que possui perfil duplo com o MESMO CPF (ex.: `PERSONAL` + `TRAINEE`)
- * consulte seus perfis irmãos ativos e alterne de modo sem precisar sair e redigitar senha.
+ * Permite que uma pessoa que possui perfil duplo com o MESMO CPF (`PERSONAL` ↔ `TRAINEE`)
+ * consulte seu perfil irmão ativo e alterne de modo sem precisar sair.
  *
- * Isolamento estrito: contas `ADMIN` NUNCA participam de troca de perfil (nem origem, nem destino).
+ * Isolamento estrito de segurança:
+ *  - Contas `ADMIN` e `RECEPTION` NUNCA participam de troca de perfil (nem origem, nem destino).
+ *  - Contas com troca obrigatória de senha pendente (`mustChangePassword = true`) não podem alternar.
+ *  - Apenas `ADMIN` consegue vincular um mesmo CPF a um segundo papel (evitando escalonamento pela Portaria).
  */
 @Injectable()
 export class SwitchProfileUseCase {
@@ -40,13 +48,24 @@ export class SwitchProfileUseCase {
 
   async listLinkedProfiles(currentUserId: string): Promise<ProfileChoice[]> {
     const current = await this.users.findById(currentUserId);
-    if (!current || !current.active || !current.cpfHash || current.role === Role.ADMIN) {
+    if (
+      !current ||
+      !current.active ||
+      !current.cpfHash ||
+      current.mustChangePassword ||
+      !SWITCHABLE_ROLES.has(current.role)
+    ) {
       return [];
     }
 
     const siblings = await this.users.findManyByCpfHash(current.cpfHash);
     return siblings
-      .filter((u) => u.id !== current.id && u.active && u.role !== Role.ADMIN)
+      .filter(
+        (u) =>
+          u.id !== current.id &&
+          u.active &&
+          SWITCHABLE_ROLES.has(u.role),
+      )
       .map((u) => ({ role: u.role, name: u.name, username: u.username }));
   }
 
@@ -55,16 +74,25 @@ export class SwitchProfileUseCase {
     targetRole: Role,
     ctx: LoginContext,
   ): Promise<SwitchProfileResult> {
-    if (targetRole === Role.ADMIN) {
-      throw new ForbiddenException('Não é permitido alternar para perfil ADMIN');
+    if (!SWITCHABLE_ROLES.has(targetRole)) {
+      throw new ForbiddenException(
+        'Troca rápida de perfil permitida apenas entre Personal e Aluno',
+      );
     }
 
     const current = await this.users.findById(currentUserId);
     if (!current || !current.active) {
       throw new UnauthorizedException('Conta inválida ou desativada');
     }
-    if (current.role === Role.ADMIN) {
-      throw new ForbiddenException('Conta ADMIN não pode alternar para outros perfis');
+    if (!SWITCHABLE_ROLES.has(current.role)) {
+      throw new ForbiddenException(
+        'Este perfil não pode alternar para outras contas',
+      );
+    }
+    if (current.mustChangePassword) {
+      throw new ForbiddenException(
+        'Conclua a troca de senha obrigatória antes de alternar de perfil',
+      );
     }
     if (!current.cpfHash) {
       throw new NotFoundException('Cadastre seu CPF para vincular múltiplos perfis');
@@ -72,7 +100,11 @@ export class SwitchProfileUseCase {
 
     const siblings = await this.users.findManyByCpfHash(current.cpfHash);
     const target = siblings.find(
-      (u) => u.id !== current.id && u.role === targetRole && u.active,
+      (u) =>
+        u.id !== current.id &&
+        u.role === targetRole &&
+        u.active &&
+        SWITCHABLE_ROLES.has(u.role),
     );
     if (!target) {
       throw new NotFoundException('Perfil vinculado não encontrado ou desativado');
@@ -83,6 +115,7 @@ export class SwitchProfileUseCase {
       role: target.role,
       name: target.name,
       username: target.username,
+      tv: target.tokenVersion ?? 0,
     };
     const token = await this.jwt.signAsync(payload);
 

@@ -100,7 +100,12 @@ export class UpdateUserUseCase {
       const cpfHash = this.crypto.hashCpf(digits);
       if (cpfHash !== target.cpfHash) {
         const existingSameCpf = await this.users.findManyByCpfHash(cpfHash);
-        assertCpfRoleAllowed(existingSameCpf, target.role, target.id);
+        assertCpfRoleAllowed(
+          existingSameCpf,
+          target.role,
+          target.id,
+          ctx.actorRole,
+        );
         patch.cpfHash = cpfHash;
         patch.cpfEncrypted = this.crypto.encryptCpf(digits, target.id);
         identifierMasked = maskCpf(digits);

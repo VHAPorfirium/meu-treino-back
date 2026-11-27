@@ -10,6 +10,7 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { Public } from '../../shared/auth/public.decorator';
+import { AllowPendingPasswordChange } from '../../shared/auth/allow-pending-password-change.decorator';
 import { CurrentUser } from '../../shared/auth/current-user.decorator';
 import { AuthUser } from '../../shared/auth/jwt-payload';
 import { AUTH_COOKIE } from '../../shared/auth/jwt.strategy';
@@ -26,16 +27,19 @@ const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
 
 /**
  * Opções compartilhadas entre `res.cookie` e `res.clearCookie`.
- * Como o frontend proxia `/api/*` no mesmo domínio (Next rewrites), o cookie é
- * first-party: `sameSite: 'lax'` mitiga CSRF em `<form>` cross-site e funciona
- * em todos os navegadores (incluindo iOS/Safari). Reutilizar exatamente as mesmas
- * opções em `clearCookie` evita que o navegador ignore o logout em produção.
+ * Em produção (`NODE_ENV=production`), `secure` é `true` por padrão (fail-safe)
+ * salvo quando `COOKIE_SECURE=false` for explicitamente definido.
  */
 function authCookieOptions() {
+  const raw = process.env.COOKIE_SECURE?.trim();
+  const secure =
+    raw !== undefined && raw !== ''
+      ? raw === 'true'
+      : process.env.NODE_ENV === 'production';
   return {
     httpOnly: true,
     sameSite: 'lax' as const,
-    secure: process.env.COOKIE_SECURE === 'true',
+    secure,
     path: '/',
   };
 }
@@ -78,7 +82,7 @@ export class AuthController {
     return { user: result.user };
   }
 
-  // GET /api/auth/linked-profiles — lista outros perfis ativos no mesmo CPF (ex.: PERSONAL <-> TRAINEE)
+  // GET /api/auth/linked-profiles — lista outros perfis ativos no mesmo CPF (PERSONAL <-> TRAINEE)
   @Get('linked-profiles')
   linkedProfiles(@CurrentUser() user: AuthUser) {
     return this.switchProfileUseCase.listLinkedProfiles(user.userId);
@@ -108,23 +112,36 @@ export class AuthController {
   }
 
   // POST /api/auth/change-password — troca de senha (primeiro acesso ou voluntária)
+  // Revoga todos os tokens antigos (incremento de tokenVersion) e reemite cookie novo para esta sessão.
+  @AllowPendingPasswordChange()
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @Post('change-password')
   @HttpCode(200)
-  changePassword(
+  async changePassword(
     @CurrentUser() user: AuthUser,
     @Body() dto: ChangePasswordDto,
     @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    return this.changePasswordUseCase.execute(user.userId, dto, {
+    const result = await this.changePasswordUseCase.execute(user.userId, dto, {
       ip: clientIp(req),
       userAgent: userAgent(req),
       requestId: requestId(req),
     });
+
+    if (result.token) {
+      res.cookie(AUTH_COOKIE, result.token, {
+        ...authCookieOptions(),
+        maxAge: THIRTY_DAYS,
+      });
+    }
+
+    return { ok: result.ok, mustChangePassword: result.mustChangePassword };
   }
 
   // POST /api/auth/logout — limpa o cookie httpOnly
   @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   @Post('logout')
   @HttpCode(200)
   logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
@@ -141,6 +158,7 @@ export class AuthController {
   }
 
   // GET /api/auth/me — valida a sessão e devolve o usuário atual (estado atualizado)
+  @AllowPendingPasswordChange()
   @Get('me')
   me(@CurrentUser() user: AuthUser) {
     return user;

@@ -115,15 +115,25 @@ export class CryptoService {
     }
   }
 
+  private cachedPepper: { raw: string; key: Buffer } | null = null;
+  private cachedEncryption: { raw: string; key: Buffer } | null = null;
+
   private resolvePepperKey(): Buffer {
     const raw = process.env.CPF_PEPPER_KEY?.trim();
     if (raw) {
+      if (this.cachedPepper?.raw === `env:${raw}`) return this.cachedPepper.key;
       if (raw.length < MIN_SECRET_LENGTH) {
         throw new Error(
           `CPF_PEPPER_KEY inválida: defina pelo menos ${MIN_SECRET_LENGTH} caracteres.`,
         );
       }
-      return this.toKeyBytes(raw);
+      const key = this.toKeyBytes(raw);
+      this.cachedPepper = { raw: `env:${raw}`, key };
+      return key;
+    }
+    const jwtSecret = getJwtSecret();
+    if (this.cachedPepper?.raw === `jwt:${jwtSecret}`) {
+      return this.cachedPepper.key;
     }
     if (process.env.NODE_ENV === 'production' && !this.warnedPepperFallback) {
       this.warnedPepperFallback = true;
@@ -131,20 +141,31 @@ export class CryptoService {
         'CPF_PEPPER_KEY não definida no .env — derivando chave via HKDF a partir de JWT_SECRET. Defina uma chave dedicada em produção.',
       );
     }
-    return Buffer.from(
-      hkdfSync('sha256', getJwtSecret(), 'ritmo:cpf-pepper:v1', 'cpf-hmac', 32),
+    const key = Buffer.from(
+      hkdfSync('sha256', jwtSecret, 'ritmo:cpf-pepper:v1', 'cpf-hmac', 32),
     );
+    this.cachedPepper = { raw: `jwt:${jwtSecret}`, key };
+    return key;
   }
 
   private resolveEncryptionKey(): Buffer {
     const raw = process.env.DATA_ENCRYPTION_KEY?.trim();
     if (raw) {
+      if (this.cachedEncryption?.raw === `env:${raw}`) {
+        return this.cachedEncryption.key;
+      }
       if (raw.length < MIN_SECRET_LENGTH) {
         throw new Error(
           `DATA_ENCRYPTION_KEY inválida: defina pelo menos ${MIN_SECRET_LENGTH} caracteres.`,
         );
       }
-      return this.toKeyBytes(raw);
+      const key = this.toKeyBytes(raw);
+      this.cachedEncryption = { raw: `env:${raw}`, key };
+      return key;
+    }
+    const jwtSecret = getJwtSecret();
+    if (this.cachedEncryption?.raw === `jwt:${jwtSecret}`) {
+      return this.cachedEncryption.key;
     }
     if (process.env.NODE_ENV === 'production' && !this.warnedEncryptionFallback) {
       this.warnedEncryptionFallback = true;
@@ -152,15 +173,17 @@ export class CryptoService {
         'DATA_ENCRYPTION_KEY não definida no .env — derivando chave via HKDF a partir de JWT_SECRET. Defina uma chave dedicada em produção.',
       );
     }
-    return Buffer.from(
+    const key = Buffer.from(
       hkdfSync(
         'sha256',
-        getJwtSecret(),
+        jwtSecret,
         'ritmo:data-enc:v1',
         'aes-256-gcm',
         32,
       ),
     );
+    this.cachedEncryption = { raw: `jwt:${jwtSecret}`, key };
+    return key;
   }
 
   private toKeyBytes(secret: string): Buffer {

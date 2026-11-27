@@ -67,6 +67,7 @@ export class ResetUserPasswordUseCase {
     const updated = await this.users.update(target.id, {
       pinHash,
       mustChangePassword: true,
+      tokenVersion: { increment: 1 },
     });
     this.userStatusCache.invalidate(target.id);
 

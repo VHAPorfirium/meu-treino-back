@@ -17,6 +17,7 @@ function makeUser(pinHash: string, overrides: Partial<User> = {}): User {
     pinHash,
     active: true,
     mustChangePassword: true,
+    tokenVersion: 0,
     createdAt: new Date(),
     ...overrides,
   };
@@ -26,17 +27,25 @@ describe('ChangePasswordUseCase', () => {
   function createSut(user: User | null) {
     const users = {
       findById: jest.fn().mockResolvedValue(user),
-      update: jest.fn().mockResolvedValue(user),
+      update: jest.fn().mockResolvedValue(
+        user ? { ...user, tokenVersion: (user.tokenVersion ?? 0) + 1 } : null,
+      ),
     } as unknown as jest.Mocked<UserRepository>;
     const security = { event: jest.fn() } as unknown as jest.Mocked<SecurityLogger>;
     const cache = { invalidate: jest.fn() } as unknown as jest.Mocked<UserStatusCacheService>;
-    const useCase = new ChangePasswordUseCase(users, security, cache);
-    return { useCase, users, security, cache };
+    const jwt = { signAsync: jest.fn().mockResolvedValue('fresh-jwt') };
+    const useCase = new ChangePasswordUseCase(
+      users,
+      security,
+      cache,
+      jwt as unknown as import('@nestjs/jwt').JwtService,
+    );
+    return { useCase, users, security, cache, jwt };
   }
 
-  it('troca senha com sucesso, limpa mustChangePassword, invalida cache e registra auditoria', async () => {
+  it('troca senha com sucesso, limpa mustChangePassword, incrementa tokenVersion, reemite JWT e registra auditoria', async () => {
     const oldHash = await argon2.hash('1234', { type: argon2.argon2id });
-    const { useCase, users, security, cache } = createSut(makeUser(oldHash));
+    const { useCase, users, security, cache, jwt } = createSut(makeUser(oldHash));
 
     const res = await useCase.execute(
       'u1',
@@ -44,13 +53,17 @@ describe('ChangePasswordUseCase', () => {
       { ip: '127.0.0.1', userAgent: 'Safari', requestId: 'r1' },
     );
 
-    expect(res).toEqual({ ok: true, mustChangePassword: false });
+    expect(res).toEqual({ ok: true, mustChangePassword: false, token: 'fresh-jwt' });
     expect(users.update).toHaveBeenCalledWith(
       'u1',
       expect.objectContaining({
         mustChangePassword: false,
+        tokenVersion: { increment: 1 },
         pinHash: expect.stringContaining('$argon2id$'),
       }),
+    );
+    expect(jwt.signAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ sub: 'u1', tv: 1 }),
     );
     const savedHash = users.update.mock.calls[0][1].pinHash!;
     expect(await argon2.verify(savedHash, 'NovaSenha@123')).toBe(true);

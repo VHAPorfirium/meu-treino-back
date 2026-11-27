@@ -81,7 +81,10 @@ export class SetUserActiveUseCase {
       }
     }
 
-    const updated = await this.users.update(target.id, { active: dto.active });
+    const updated = await this.users.update(target.id, {
+      active: dto.active,
+      ...(!dto.active ? { tokenVersion: { increment: 1 } } : {}),
+    });
     this.userStatusCache.invalidate(target.id);
 
     // Ao desligar um PERSONAL, encerra automaticamente todos os seus vínculos ACTIVE e PENDING

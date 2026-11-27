@@ -31,6 +31,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!status || !status.active) {
       throw new UnauthorizedException('Conta desativada');
     }
+    const tokenVersion = payload.tv ?? 0;
+    const currentVersion = status.tokenVersion ?? 0;
+    if (tokenVersion !== currentVersion) {
+      throw new UnauthorizedException('Sessão revogada. Faça login novamente.');
+    }
     return {
       userId: status.id,
       role: status.role,

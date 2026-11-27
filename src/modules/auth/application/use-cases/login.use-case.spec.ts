@@ -33,6 +33,7 @@ function makeUser(overrides: Partial<User> = {}): User {
     pinHash: '',
     active: true,
     mustChangePassword: false,
+    tokenVersion: 0,
     createdAt: new Date(),
     ...overrides,
   };

@@ -12,6 +12,7 @@ import { MetricsMiddleware } from './shared/metrics/metrics.middleware';
 import { AllExceptionsFilter } from './shared/http/all-exceptions.filter';
 import { requestTimingMiddleware } from './shared/http/request-timing.middleware';
 import { JwtAuthGuard } from './shared/auth/jwt-auth.guard';
+import { PasswordChangeRequiredGuard } from './shared/auth/password-change-required.guard';
 import { RolesGuard } from './shared/auth/roles.guard';
 
 import { AuthModule } from './modules/auth/auth.module';
@@ -53,9 +54,10 @@ import { AdminModule } from './modules/admin/admin.module';
     ProgramsModule,
   ],
   providers: [
-    // 1) rate limit  2) autentica  3) checa papel
+    // 1) rate limit  2) autentica  3) impõe troca de senha pendente  4) checa papel
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: PasswordChangeRequiredGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     // loga a causa real de todo 5xx (+ requestId na resposta) e o 429 como
     // evento de segurança. Substitui o antigo ThrottlerLogFilter.

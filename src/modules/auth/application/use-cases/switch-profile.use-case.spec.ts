@@ -16,6 +16,7 @@ function makeUser(overrides: Partial<User>): User {
     pinHash: 'hash',
     active: true,
     mustChangePassword: false,
+    tokenVersion: 0,
     createdAt: new Date(),
     ...overrides,
   };
@@ -24,6 +25,7 @@ function makeUser(overrides: Partial<User>): User {
 describe('SwitchProfileUseCase', () => {
   const personal = makeUser({ id: 'u-pers', username: 'victor.personal', role: Role.PERSONAL });
   const trainee = makeUser({ id: 'u-alun', username: 'victor.hugo', role: Role.TRAINEE });
+  const reception = makeUser({ id: 'u-rec', username: 'portaria', role: Role.RECEPTION });
   const admin = makeUser({ id: 'u-adm', username: 'admin', role: Role.ADMIN });
 
   function createSut(all: User[]) {
@@ -63,15 +65,35 @@ describe('SwitchProfileUseCase', () => {
     );
   });
 
-  it('bloqueia estritamente qualquer troca envolvendo ADMIN', async () => {
-    const { useCase } = createSut([personal, trainee, admin]);
+  it('bloqueia estritamente qualquer troca envolvendo ADMIN ou RECEPTION', async () => {
+    const { useCase } = createSut([personal, trainee, reception, admin]);
 
     expect(await useCase.listLinkedProfiles('u-adm')).toEqual([]);
+    expect(await useCase.listLinkedProfiles('u-rec')).toEqual([]);
+    expect(await useCase.listLinkedProfiles('u-alun')).toEqual([
+      { role: Role.PERSONAL, name: 'Victor', username: 'victor.personal' },
+    ]);
     await expect(
       useCase.execute('u-pers', Role.ADMIN, { ip: '127.0.0.1' }),
     ).rejects.toThrow(ForbiddenException);
     await expect(
       useCase.execute('u-adm', Role.TRAINEE, { ip: '127.0.0.1' }),
+    ).rejects.toThrow(ForbiddenException);
+    await expect(
+      useCase.execute('u-alun', Role.RECEPTION, { ip: '127.0.0.1' }),
+    ).rejects.toThrow(ForbiddenException);
+    await expect(
+      useCase.execute('u-rec', Role.TRAINEE, { ip: '127.0.0.1' }),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('bloqueia troca de perfil enquanto mustChangePassword = true', async () => {
+    const pendingTrainee = { ...trainee, mustChangePassword: true };
+    const { useCase } = createSut([personal, pendingTrainee]);
+
+    expect(await useCase.listLinkedProfiles('u-alun')).toEqual([]);
+    await expect(
+      useCase.execute('u-alun', Role.PERSONAL, { ip: '127.0.0.1' }),
     ).rejects.toThrow(ForbiddenException);
   });
 

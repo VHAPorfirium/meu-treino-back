@@ -22,6 +22,7 @@ export interface UpdateUserInput {
   pinHash?: string;
   active?: boolean;
   mustChangePassword?: boolean;
+  tokenVersion?: number | { increment: number };
 }
 
 export interface UserRepository {

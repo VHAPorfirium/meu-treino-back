@@ -148,8 +148,13 @@ describe('AuthController', () => {
     });
   });
 
-  it('delega troca de senha autenticada para ChangePasswordUseCase', async () => {
-    const { controller, changePasswordUseCase, req } = createSut();
+  it('delega troca de senha autenticada para ChangePasswordUseCase e reemite cookie quando token retorna', async () => {
+    const { controller, changePasswordUseCase, req, res } = createSut();
+    changePasswordUseCase.execute.mockResolvedValueOnce({
+      ok: true,
+      mustChangePassword: false,
+      token: 'rotated-jwt',
+    });
 
     const result = await controller.changePassword(
       {
@@ -161,9 +166,15 @@ describe('AuthController', () => {
       },
       { currentPassword: '1234', newPassword: 'NovaSenha@1' },
       req,
+      res,
     );
 
     expect(result).toEqual({ ok: true, mustChangePassword: false });
+    expect(res.cookie).toHaveBeenCalledWith(
+      AUTH_COOKIE,
+      'rotated-jwt',
+      expect.objectContaining({ httpOnly: true, sameSite: 'lax' }),
+    );
     expect(changePasswordUseCase.execute).toHaveBeenCalledWith(
       'u1',
       { currentPassword: '1234', newPassword: 'NovaSenha@1' },
