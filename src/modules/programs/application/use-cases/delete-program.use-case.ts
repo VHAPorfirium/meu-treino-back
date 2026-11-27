@@ -1,6 +1,9 @@
 import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { ProgramStatus } from '@prisma/client';
-import { TrainerAccessService } from '../../../links/application/trainer-access.service';
+import {
+  TrainerAccessService,
+  ensureTrainerAccess,
+} from '../../../links/application/trainer-access.service';
 import {
   PROGRAM_REPOSITORY,
   ProgramRepository,
@@ -34,7 +37,7 @@ export class DeleteProgramUseCase {
     );
 
     let hasDetachedActiveTrainee = false;
-    if (trainerId && this.trainerAccess) {
+    if (trainerId && ensureTrainerAccess(this.trainerAccess)) {
       const activeIds = new Set(
         await this.trainerAccess.getActiveTraineeIds(trainerId),
       );

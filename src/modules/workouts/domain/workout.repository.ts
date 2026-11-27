@@ -80,6 +80,12 @@ export interface WorkoutRepository {
 
   delete(id: string): Promise<void>;
 
+  /** IDs dos alunos que ainda têm o treino direcionado. */
+  listAssigneeIds(workoutId: string): Promise<string[]>;
+
+  /** Tira o treino da carteira do personal sem apagá-lo (preserva o treino de ex-alunos). */
+  detachOwner(workoutId: string): Promise<void>;
+
   findExerciseInWorkout(
     workoutId: string,
     workoutExerciseId: string,
@@ -107,8 +113,16 @@ export interface WorkoutRepository {
   ): Promise<void>;
 
   // ── E1.1: direcionamento ───────────────────────────────────────────────────
-  /** Substitui o conjunto de destinatários (idempotente). */
-  setAssignees(workoutId: string, userIds: string[]): Promise<AssigneeSummary[]>;
+  /**
+   * Substitui o conjunto de destinatários (idempotente). Se `scopeUserIds` for informado,
+   * só remove atribuições DENTRO desse escopo (ex.: alunos com vínculo ativo do personal),
+   * preservando o treino de ex-alunos (ENDED).
+   */
+  setAssignees(
+    workoutId: string,
+    userIds: string[],
+    scopeUserIds?: string[],
+  ): Promise<AssigneeSummary[]>;
 
   /** Treino ATIVO direcionado ao usuário para o dia da semana (mais recente). */
   findAssignedActiveByDay(

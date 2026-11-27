@@ -5,8 +5,20 @@ import { suggestUsernameFromName } from '../../../shared/security/cpf-and-passwo
 import {
   CreateUserInput,
   UpdateUserInput,
+  UserListFilter,
+  UserListRecord,
   UserRepository,
 } from '../domain/user.repository';
+
+const USER_LIST_SELECT = {
+  id: true,
+  name: true,
+  username: true,
+  role: true,
+  active: true,
+  mustChangePassword: true,
+  cpfEncrypted: true,
+} as const;
 
 @Injectable()
 export class PrismaUserRepository implements UserRepository {
@@ -14,6 +26,26 @@ export class PrismaUserRepository implements UserRepository {
 
   findAll(): Promise<User[]> {
     return this.prisma.user.findMany();
+  }
+
+  findManyForList(filter: UserListFilter): Promise<UserListRecord[]> {
+    if (filter.ids && filter.ids.length === 0) return Promise.resolve([]);
+    return this.prisma.user.findMany({
+      where: {
+        ...(filter.ids ? { id: { in: filter.ids } } : {}),
+        ...(filter.roles ? { role: { in: filter.roles } } : {}),
+        ...(filter.active !== undefined ? { active: filter.active } : {}),
+      },
+      select: USER_LIST_SELECT,
+    });
+  }
+
+  findRolesByIds(ids: string[]): Promise<Pick<User, 'id' | 'role'>[]> {
+    if (ids.length === 0) return Promise.resolve([]);
+    return this.prisma.user.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, role: true },
+    });
   }
 
   findById(id: string): Promise<User | null> {

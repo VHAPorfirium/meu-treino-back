@@ -1,5 +1,8 @@
 import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
-import { TrainerAccessService } from '../../../links/application/trainer-access.service';
+import {
+  TrainerAccessService,
+  ensureTrainerAccess,
+} from '../../../links/application/trainer-access.service';
 import {
   WORKOUT_REPOSITORY,
   WorkoutRepository,
@@ -23,7 +26,7 @@ export class DuplicateWorkoutUseCase {
 
     const copyAssignees = dto.copyAssignees ?? false;
     const allowedAssigneeIds =
-      copyAssignees && trainerId && this.trainerAccess
+      copyAssignees && trainerId && ensureTrainerAccess(this.trainerAccess)
         ? await this.trainerAccess.getActiveTraineeIds(trainerId)
         : undefined;
 

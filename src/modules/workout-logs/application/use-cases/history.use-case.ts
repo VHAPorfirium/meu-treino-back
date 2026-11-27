@@ -1,5 +1,8 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { TrainerAccessService } from '../../../links/application/trainer-access.service';
+import {
+  TrainerAccessService,
+  ensureTrainerAccess,
+} from '../../../links/application/trainer-access.service';
 import {
   WORKOUT_LOG_REPOSITORY,
   WorkoutLogRepository,
@@ -21,7 +24,7 @@ export class HistoryUseCase {
     total: number;
   }> {
     let userIds: string[] | undefined;
-    if (trainerId && this.trainerAccess) {
+    if (trainerId && ensureTrainerAccess(this.trainerAccess)) {
       userIds = await this.trainerAccess.getActiveTraineeIds(trainerId);
       if (userIds.length === 0) return { items: [], total: 0 };
     }

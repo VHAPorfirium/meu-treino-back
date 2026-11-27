@@ -36,6 +36,19 @@ function makeInMemoryRepo(
     async findAll() {
       return Array.from(store.values());
     },
+    async findManyForList(filter) {
+      return Array.from(store.values()).filter(
+        (u) =>
+          (!filter.ids || filter.ids.includes(u.id)) &&
+          (!filter.roles || filter.roles.includes(u.role)) &&
+          (filter.active === undefined || u.active === filter.active),
+      );
+    },
+    async findRolesByIds(ids) {
+      return Array.from(store.values())
+        .filter((u) => ids.includes(u.id))
+        .map((u) => ({ id: u.id, role: u.role }));
+    },
     async findById(id) {
       return store.get(id) ?? null;
     },

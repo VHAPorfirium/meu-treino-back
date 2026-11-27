@@ -3,7 +3,12 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import {
+  TrainerAccessService,
+  ensureTrainerAccess,
+} from '../../../links/application/trainer-access.service';
 import {
   WORKOUT_REPOSITORY,
   WorkoutRepository,
@@ -15,6 +20,7 @@ export class DeleteWorkoutUseCase {
   constructor(
     @Inject(WORKOUT_REPOSITORY)
     private readonly repo: WorkoutRepository,
+    @Optional() private readonly trainerAccess?: TrainerAccessService,
   ) {}
 
   async execute(id: string, trainerId?: string) {
@@ -29,6 +35,19 @@ export class DeleteWorkoutUseCase {
       throw new ConflictException(
         `Este treino tem ${logs} sessão(ões) registrada(s). Desative-o em vez de excluir.`,
       );
+    }
+
+    // Se o treino ainda está com algum ex-aluno (vínculo ENDED), só sai da carteira
+    // do personal — não some debaixo do aluno que já foi desvinculado.
+    if (trainerId && ensureTrainerAccess(this.trainerAccess)) {
+      const assigneeIds = await this.repo.listAssigneeIds(id);
+      if (assigneeIds.length > 0) {
+        const activeSet = new Set(await this.trainerAccess.getActiveTraineeIds(trainerId));
+        if (assigneeIds.some((uid) => !activeSet.has(uid))) {
+          await this.repo.detachOwner(id);
+          return { ok: true, detached: true };
+        }
+      }
     }
 
     try {

@@ -14,11 +14,17 @@ import {
   USER_REPOSITORY,
   UserRepository,
 } from '../../../users/domain/user.repository';
-import { TrainerAccessService } from '../../../links/application/trainer-access.service';
+import {
+  TrainerAccessService,
+  ensureTrainerAccess,
+} from '../../../links/application/trainer-access.service';
 import { PushService } from '../../../push/application/push.service';
 import { ProgramDurationPolicy } from '../../domain/program-duration-policy';
 import { diaLocal } from '../../../../shared/time/dia-local';
-import { assertProgramOwnership } from '../program-ownership';
+import {
+  assertProgramOwnership,
+  filterProgramAssignmentsToActiveTrainees,
+} from '../program-ownership';
 
 @Injectable()
 export class AssignProgramToUsersUseCase {
@@ -54,13 +60,18 @@ export class AssignProgramToUsersUseCase {
       });
     }
 
-    return this.programRepository.findProgramById(programId);
+    const updatedProgram = await this.programRepository.findProgramById(programId);
+    return filterProgramAssignmentsToActiveTrainees(
+      updatedProgram,
+      trainerId,
+      this.trainerAccess,
+    );
   }
 
   async ensureAllAreTrainees(userIds: string[], trainerId?: string) {
     if (userIds.length === 0) return;
-    const allUsers = await this.userRepository.findAll();
-    const userById = new Map(allUsers.map((user) => [user.id, user]));
+    const foundUsers = await this.userRepository.findRolesByIds(userIds);
+    const userById = new Map(foundUsers.map((user) => [user.id, user]));
     const invalidUserIds = userIds.filter(
       (userId) => userById.get(userId)?.role !== Role.TRAINEE,
     );
@@ -70,7 +81,7 @@ export class AssignProgramToUsersUseCase {
           invalidUserIds.join(', '),
       );
     }
-    if (trainerId && this.trainerAccess) {
+    if (trainerId && ensureTrainerAccess(this.trainerAccess)) {
       await this.trainerAccess.assertAllActiveLinks(trainerId, userIds);
     }
   }

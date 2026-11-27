@@ -226,6 +226,21 @@ export class PrismaWorkoutRepository implements WorkoutRepository {
     await this.prisma.workout.delete({ where: { id } });
   }
 
+  async listAssigneeIds(workoutId: string): Promise<string[]> {
+    const rows = await this.prisma.workoutAssignment.findMany({
+      where: { workoutId },
+      select: { userId: true },
+    });
+    return rows.map((r) => r.userId);
+  }
+
+  async detachOwner(workoutId: string): Promise<void> {
+    await this.prisma.workout.update({
+      where: { id: workoutId },
+      data: { ownerTrainerId: null },
+    });
+  }
+
   findExerciseInWorkout(
     workoutId: string,
     workoutExerciseId: string,
@@ -283,12 +298,24 @@ export class PrismaWorkoutRepository implements WorkoutRepository {
   async setAssignees(
     workoutId: string,
     userIds: string[],
+    scopeUserIds?: string[],
   ): Promise<AssigneeSummary[]> {
     const unique = Array.from(new Set(userIds));
     await this.prisma.$transaction(async (tx) => {
-      await tx.workoutAssignment.deleteMany({
-        where: { workoutId, userId: { notIn: unique } },
-      });
+      const scopedRemoval = scopeUserIds
+        ? scopeUserIds.filter((id) => !unique.includes(id))
+        : null;
+      if (!scopedRemoval) {
+        await tx.workoutAssignment.deleteMany({
+          where: { workoutId, userId: { notIn: unique } },
+        });
+      } else if (scopedRemoval.length > 0) {
+        // Remove só quem está no escopo (vínculo ativo) e saiu da lista;
+        // ex-alunos ENDED mantêm o treino.
+        await tx.workoutAssignment.deleteMany({
+          where: { workoutId, userId: { in: scopedRemoval } },
+        });
+      }
       if (unique.length) {
         await tx.workoutAssignment.createMany({
           data: unique.map((userId) => ({ workoutId, userId })),
