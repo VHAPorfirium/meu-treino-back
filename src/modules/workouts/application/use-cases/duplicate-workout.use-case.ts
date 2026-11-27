@@ -1,4 +1,5 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { TrainerAccessService } from '../../../links/application/trainer-access.service';
 import {
   WORKOUT_REPOSITORY,
   WorkoutRepository,
@@ -11,16 +12,26 @@ export class DuplicateWorkoutUseCase {
   constructor(
     @Inject(WORKOUT_REPOSITORY)
     private readonly repo: WorkoutRepository,
+    @Optional()
+    private readonly trainerAccess?: TrainerAccessService,
   ) {}
 
   async execute(id: string, dto: DuplicateWorkoutDto, trainerId?: string) {
     const src = await this.repo.findById(id);
     if (!src) throw new NotFoundException('Treino não encontrado');
     assertWorkoutOwnership(src, trainerId);
+
+    const copyAssignees = dto.copyAssignees ?? false;
+    const allowedAssigneeIds =
+      copyAssignees && trainerId && this.trainerAccess
+        ? await this.trainerAccess.getActiveTraineeIds(trainerId)
+        : undefined;
+
     return this.repo.duplicate(id, {
       name: dto.name?.trim() || `${src.name} (cópia)`,
-      copyAssignees: dto.copyAssignees ?? false,
+      copyAssignees,
       ownerTrainerId: trainerId ?? src.ownerTrainerId ?? undefined,
+      allowedAssigneeIds,
     });
   }
 }

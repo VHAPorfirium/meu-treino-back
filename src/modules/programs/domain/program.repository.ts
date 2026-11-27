@@ -36,6 +36,8 @@ export interface UpdateProgramData {
   name?: string;
   description?: string | null;
   workoutIds?: string[];
+  /** Restringe sincronização de WorkoutAssignment aos alunos com vínculo ACTIVE. */
+  allowedUserIds?: string[];
 }
 
 export interface CompletedProgramSession extends SessionLoadRecords {
@@ -64,6 +66,9 @@ export interface ProgramRepository {
   updateProgram(programId: string, programData: UpdateProgramData): Promise<ProgramWithDetails>;
 
   deleteProgram(programId: string): Promise<void>;
+
+  /** Remove o programa da carteira do personal sem apagar medalhas/desafios por cascade. */
+  detachProgramOwner?(programId: string): Promise<void>;
 
   findProgramById(programId: string): Promise<ProgramWithDetails | null>;
 

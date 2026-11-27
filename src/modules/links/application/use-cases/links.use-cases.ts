@@ -404,6 +404,21 @@ export class AcceptLinkUseCase {
         portedWorkoutsCount += 1;
       }
 
+      // 3) Remove também qualquer WorkoutAssignment remanescente de treinos INATIVOS
+      //    pertencentes a outros personais, impedindo que o ex-personal reative um
+      //    treino antigo depois e ele reapareça no app do aluno já vinculado a outro personal.
+      await tx.workoutAssignment.deleteMany({
+        where: {
+          userId: traineeId,
+          workout: {
+            OR: [
+              { ownerTrainerId: null },
+              { ownerTrainerId: { not: link.trainerId } },
+            ],
+          },
+        },
+      });
+
       return { link: acceptedLink, portedWorkoutsCount, portedProgram };
     });
 
@@ -439,7 +454,7 @@ export class AcceptLinkUseCase {
   }
 }
 
-/** TRAINEE → recusa solicitação pendente. */
+/** TRAINEE → recusa solicitação pendente (serializada com FOR UPDATE contra race com Accept/End). */
 @Injectable()
 export class RejectLinkUseCase {
   constructor(
@@ -448,20 +463,24 @@ export class RejectLinkUseCase {
   ) {}
 
   async execute(traineeId: string, linkId: string, ctx: LinkAuditContext) {
-    const link = await this.prisma.trainerTraineeLink.findUnique({
-      where: { id: linkId },
-    });
-    if (!link) throw new NotFoundException('Solicitação não encontrada');
-    if (link.traineeId !== traineeId) {
-      throw new ForbiddenException('Esta solicitação não pertence a você');
-    }
-    if (link.status !== LinkStatus.PENDING) {
-      throw new BadRequestException('Esta solicitação não está mais pendente');
-    }
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${traineeId} FOR UPDATE`;
 
-    const updated = await this.prisma.trainerTraineeLink.update({
-      where: { id: link.id },
-      data: { status: LinkStatus.REJECTED, respondedAt: new Date() },
+      const link = await tx.trainerTraineeLink.findUnique({
+        where: { id: linkId },
+      });
+      if (!link) throw new NotFoundException('Solicitação não encontrada');
+      if (link.traineeId !== traineeId) {
+        throw new ForbiddenException('Esta solicitação não pertence a você');
+      }
+      if (link.status !== LinkStatus.PENDING) {
+        throw new BadRequestException('Esta solicitação não está mais pendente');
+      }
+
+      return tx.trainerTraineeLink.update({
+        where: { id: link.id },
+        data: { status: LinkStatus.REJECTED, respondedAt: new Date() },
+      });
     });
 
     this.security.event('link.rejected', {
@@ -480,7 +499,7 @@ export class RejectLinkUseCase {
   }
 }
 
-/** TRAINEE ou PERSONAL → encerra vínculo ACTIVE (ou PERSONAL cancela convite PENDING). */
+/** TRAINEE ou PERSONAL → encerra vínculo ACTIVE (ou PERSONAL cancela convite PENDING), serializado com FOR UPDATE. */
 @Injectable()
 export class EndLinkUseCase {
   constructor(
@@ -495,41 +514,52 @@ export class EndLinkUseCase {
     linkId: string,
     ctx: LinkAuditContext,
   ) {
-    const link = await this.prisma.trainerTraineeLink.findUnique({
+    const initial = await this.prisma.trainerTraineeLink.findUnique({
       where: { id: linkId },
+      select: { id: true, traineeId: true },
     });
-    if (!link) throw new NotFoundException('Vínculo não encontrado');
+    if (!initial) throw new NotFoundException('Vínculo não encontrado');
 
-    let reason: LinkEndReason;
-    if (link.status === LinkStatus.PENDING) {
-      if (link.trainerId !== actorUserId) {
-        throw new ForbiddenException('Apenas o personal pode cancelar este convite');
-      }
-      reason = LinkEndReason.TRAINER_CANCELLED;
-    } else if (link.status === LinkStatus.ACTIVE) {
-      if (link.traineeId === actorUserId) {
-        reason = LinkEndReason.TRAINEE_ENDED;
-      } else if (link.trainerId === actorUserId) {
-        reason = LinkEndReason.TRAINER_ENDED;
+    const { updated, reason } = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${initial.traineeId} FOR UPDATE`;
+
+      const link = await tx.trainerTraineeLink.findUnique({
+        where: { id: linkId },
+      });
+      if (!link) throw new NotFoundException('Vínculo não encontrado');
+
+      let resolvedReason: LinkEndReason;
+      if (link.status === LinkStatus.PENDING) {
+        if (link.trainerId !== actorUserId) {
+          throw new ForbiddenException('Apenas o personal pode cancelar este convite');
+        }
+        resolvedReason = LinkEndReason.TRAINER_CANCELLED;
+      } else if (link.status === LinkStatus.ACTIVE) {
+        if (link.traineeId === actorUserId) {
+          resolvedReason = LinkEndReason.TRAINEE_ENDED;
+        } else if (link.trainerId === actorUserId) {
+          resolvedReason = LinkEndReason.TRAINER_ENDED;
+        } else {
+          throw new ForbiddenException('Você não participa deste vínculo');
+        }
       } else {
-        throw new ForbiddenException('Você não participa deste vínculo');
+        throw new BadRequestException('Este vínculo já foi encerrado');
       }
-    } else {
-      throw new BadRequestException('Este vínculo já foi encerrado');
-    }
 
-    const updated = await this.prisma.trainerTraineeLink.update({
-      where: { id: link.id },
-      data: {
-        status: LinkStatus.ENDED,
-        endedReason: reason,
-        endedAt: new Date(),
-      },
+      const saved = await tx.trainerTraineeLink.update({
+        where: { id: link.id },
+        data: {
+          status: LinkStatus.ENDED,
+          endedReason: resolvedReason,
+          endedAt: new Date(),
+        },
+      });
+      return { updated: saved, reason: resolvedReason };
     });
 
     await Promise.all([
-      this.cache.invalidarUsuario(link.traineeId),
-      this.cache.invalidarUsuario(link.trainerId),
+      this.cache.invalidarUsuario(updated.traineeId),
+      this.cache.invalidarUsuario(updated.trainerId),
       this.cache.invalidarUsuario('all'),
     ]);
 
@@ -537,7 +567,7 @@ export class EndLinkUseCase {
       ip: ctx.ip,
       userAgent: ctx.userAgent,
       requestId: ctx.requestId,
-      userId: link.traineeId,
+      userId: updated.traineeId,
       actorUserId,
       role: actorRole,
       reason,

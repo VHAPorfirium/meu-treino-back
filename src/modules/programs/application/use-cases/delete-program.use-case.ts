@@ -1,23 +1,54 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { ProgramStatus } from '@prisma/client';
+import { TrainerAccessService } from '../../../links/application/trainer-access.service';
 import {
   PROGRAM_REPOSITORY,
   ProgramRepository,
 } from '../../domain/program.repository';
 import { assertProgramOwnership } from '../program-ownership';
 
-/** Remove só o agrupamento: os treinos continuam existindo e direcionados. */
+/**
+ * Remove o programa da visão do personal.
+ * Se existirem conquistas concluídas (COMPLETED) ou participações ativas de ex-alunos
+ * já desvinculados (ENDED), apenas desvincula `ownerTrainerId` (preservando medalhas e
+ * desafios dos alunos em vez de destruí-los por cascade).
+ */
 @Injectable()
 export class DeleteProgramUseCase {
   constructor(
     @Inject(PROGRAM_REPOSITORY)
     private readonly programRepository: ProgramRepository,
+    @Optional()
+    private readonly trainerAccess?: TrainerAccessService,
   ) {}
 
   async execute(programId: string, trainerId?: string) {
     const existingProgram = await this.programRepository.findProgramById(programId);
     if (!existingProgram) throw new NotFoundException('Programa não encontrado');
     assertProgramOwnership(existingProgram, trainerId);
-    await this.programRepository.deleteProgram(programId);
+
+    const hasCompletedMedals = existingProgram.assignments.some(
+      (a) => a.status === ProgramStatus.COMPLETED,
+    );
+
+    let hasDetachedActiveTrainee = false;
+    if (trainerId && this.trainerAccess) {
+      const activeIds = new Set(
+        await this.trainerAccess.getActiveTraineeIds(trainerId),
+      );
+      hasDetachedActiveTrainee = existingProgram.assignments.some(
+        (a) => a.status === ProgramStatus.ACTIVE && !activeIds.has(a.userId),
+      );
+    }
+
+    if (
+      (hasCompletedMedals || hasDetachedActiveTrainee) &&
+      this.programRepository.detachProgramOwner
+    ) {
+      await this.programRepository.detachProgramOwner(programId);
+    } else {
+      await this.programRepository.deleteProgram(programId);
+    }
     return { ok: true };
   }
 }

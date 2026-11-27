@@ -1,4 +1,11 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
+import { TrainerAccessService } from '../../../links/application/trainer-access.service';
 import {
   PROGRAM_REPOSITORY,
   ProgramRepository,
@@ -11,6 +18,8 @@ export class UpdateProgramUseCase {
   constructor(
     @Inject(PROGRAM_REPOSITORY)
     private readonly programRepository: ProgramRepository,
+    @Optional()
+    private readonly trainerAccess?: TrainerAccessService,
   ) {}
 
   async execute(
@@ -41,6 +50,11 @@ export class UpdateProgramUseCase {
       }
     }
 
+    const allowedUserIds =
+      uniqueWorkoutIds && trainerId && this.trainerAccess
+        ? await this.trainerAccess.getActiveTraineeIds(trainerId)
+        : undefined;
+
     return this.programRepository.updateProgram(programId, {
       name: updateProgramDto.name?.trim(),
       description:
@@ -48,6 +62,7 @@ export class UpdateProgramUseCase {
           ? undefined
           : updateProgramDto.description?.trim() || null,
       workoutIds: uniqueWorkoutIds,
+      allowedUserIds,
     });
   }
 }
