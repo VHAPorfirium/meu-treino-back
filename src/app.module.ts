@@ -7,6 +7,8 @@ import { PrismaModule } from './shared/prisma/prisma.module';
 import { CacheModule } from './shared/cache/cache.module';
 import { SecurityModule } from './shared/security/security.module';
 import { StorageModule } from './shared/storage/storage.module';
+import { MetricsModule } from './shared/metrics/metrics.module';
+import { MetricsMiddleware } from './shared/metrics/metrics.middleware';
 import { AllExceptionsFilter } from './shared/http/all-exceptions.filter';
 import { requestTimingMiddleware } from './shared/http/request-timing.middleware';
 import { JwtAuthGuard } from './shared/auth/jwt-auth.guard';
@@ -24,6 +26,7 @@ import { ProgressPhotosModule } from './modules/progress-photos/progress-photos.
 import { PushModule } from './modules/push/push.module';
 import { ProgramsModule } from './modules/programs/programs.module';
 import { LinksModule } from './modules/links/links.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 @Module({
   imports: [
@@ -34,10 +37,12 @@ import { LinksModule } from './modules/links/links.module';
     CacheModule,
     SecurityModule,
     StorageModule,
+    MetricsModule,
     HealthModule,
     AuthModule,
     UsersModule,
     LinksModule,
+    AdminModule,
     ExercisesModule,
     MuscleGroupsModule,
     WorkoutsModule,
@@ -58,8 +63,8 @@ import { LinksModule } from './modules/links/links.module';
   ],
 })
 export class AppModule implements NestModule {
-  // duração de todo request — a régua do "antes e depois" do cache (Frente G)
+  // duração de todo request + métricas p50/p95/p99 para observabilidade /admin
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(requestTimingMiddleware).forRoutes('*');
+    consumer.apply(requestTimingMiddleware, MetricsMiddleware).forRoutes('*');
   }
 }

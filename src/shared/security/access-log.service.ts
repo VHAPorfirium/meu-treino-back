@@ -22,14 +22,34 @@ export interface ListAccessLogsQuery {
   userId?: string;
   actorUserId?: string;
   ip?: string;
+  search?: string;
   from?: Date;
   to?: Date;
   limit?: number;
   offset?: number;
 }
 
+export interface AccessLogUserSummary {
+  id: string;
+  name: string;
+  username: string;
+  role: string;
+}
+
+export type AccessLogDetailed = AccessLog & {
+  user: AccessLogUserSummary | null;
+  actor: AccessLogUserSummary | null;
+};
+
 export interface AccessLogPage {
   items: AccessLog[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface AccessLogDetailedPage {
+  items: AccessLogDetailed[];
   total: number;
   limit: number;
   offset: number;
@@ -123,11 +143,7 @@ export class AccessLogService {
     return count;
   }
 
-  /** Consulta paginada para auditoria e observabilidade (consumida no painel /admin). */
-  async list(query: ListAccessLogsQuery = {}): Promise<AccessLogPage> {
-    const limit = Math.min(200, Math.max(1, Math.trunc(query.limit ?? 50)));
-    const offset = Math.max(0, Math.trunc(query.offset ?? 0));
-
+  private buildWhere(query: ListAccessLogsQuery): Prisma.AccessLogWhereInput {
     const where: Prisma.AccessLogWhereInput = {};
     if (query.event) where.event = query.event;
     if (query.userId) where.userId = query.userId;
@@ -139,10 +155,62 @@ export class AccessLogService {
         ...(query.to ? { lte: query.to } : {}),
       };
     }
+    const q = query.search?.trim();
+    if (q) {
+      where.OR = [
+        { ip: { contains: q, mode: 'insensitive' } },
+        { identifierMasked: { contains: q, mode: 'insensitive' } },
+        { path: { contains: q, mode: 'insensitive' } },
+        { reason: { contains: q, mode: 'insensitive' } },
+        { requestId: { contains: q, mode: 'insensitive' } },
+        { user: { username: { contains: q, mode: 'insensitive' } } },
+        { user: { name: { contains: q, mode: 'insensitive' } } },
+        { actor: { username: { contains: q, mode: 'insensitive' } } },
+      ];
+    }
+    return where;
+  }
+
+  /** Consulta paginada básica (compatibilidade interna). */
+  async list(query: ListAccessLogsQuery = {}): Promise<AccessLogPage> {
+    const limit = Math.min(200, Math.max(1, Math.trunc(query.limit ?? 50)));
+    const offset = Math.max(0, Math.trunc(query.offset ?? 0));
+    const where = this.buildWhere(query);
 
     const [items, total] = await Promise.all([
       this.prisma.accessLog.findMany({
         where,
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+      }),
+      this.prisma.accessLog.count({ where }),
+    ]);
+
+    return { items, total, limit, offset };
+  }
+
+  /**
+   * Consulta paginada enriquecida com resumo mínimo do usuário/ator (`id`, `name`,
+   * `username`, `role`) para auditoria e exportação CSV no painel `/admin`.
+   */
+  async listDetailed(
+    query: ListAccessLogsQuery = {},
+    maxLimit = 200,
+  ): Promise<AccessLogDetailedPage> {
+    const limit = Math.min(maxLimit, Math.max(1, Math.trunc(query.limit ?? 50)));
+    const offset = Math.max(0, Math.trunc(query.offset ?? 0));
+    const where = this.buildWhere(query);
+
+    const userSelect = { id: true, name: true, username: true, role: true } as const;
+
+    const [items, total] = await Promise.all([
+      this.prisma.accessLog.findMany({
+        where,
+        include: {
+          user: { select: userSelect },
+          actor: { select: userSelect },
+        },
         orderBy: { createdAt: 'desc' },
         take: limit,
         skip: offset,
