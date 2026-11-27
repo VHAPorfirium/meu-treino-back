@@ -255,6 +255,7 @@ export class LoginUseCase {
         role: user.role,
         name: user.name,
         username: user.username,
+        tv: user.tokenVersion ?? 0,
       };
       const token = await this.jwt.signAsync(payload);
 

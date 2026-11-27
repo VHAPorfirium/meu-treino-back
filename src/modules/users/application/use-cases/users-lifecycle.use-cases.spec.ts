@@ -26,8 +26,12 @@ const ACTOR_CTX = {
   requestId: 'req-1',
 };
 
-function makeInMemoryRepo(initial: User[] = []): UserRepository {
-  const store = new Map<string, User>(initial.map((u) => [u.id, { ...u }]));
+function makeInMemoryRepo(
+  initial: (Omit<User, 'tokenVersion'> & { tokenVersion?: number })[] = [],
+): UserRepository {
+  const store = new Map<string, User>(
+    initial.map((u) => [u.id, { tokenVersion: 0, ...u }]),
+  );
   return {
     async findAll() {
       return Array.from(store.values());
@@ -61,6 +65,7 @@ function makeInMemoryRepo(initial: User[] = []): UserRepository {
         pinHash: data.pinHash,
         active: data.active ?? true,
         mustChangePassword: data.mustChangePassword ?? false,
+        tokenVersion: 0,
         createdAt: new Date(),
       };
       store.set(user.id, user);
@@ -69,7 +74,18 @@ function makeInMemoryRepo(initial: User[] = []): UserRepository {
     async update(id, data) {
       const existing = store.get(id);
       if (!existing) throw new Error('not found');
-      const updated = { ...existing, ...data };
+      const { tokenVersion, ...rest } = data;
+      const nextTokenVersion =
+        typeof tokenVersion === 'object' && tokenVersion !== null
+          ? existing.tokenVersion + tokenVersion.increment
+          : typeof tokenVersion === 'number'
+            ? tokenVersion
+            : existing.tokenVersion;
+      const updated: User = {
+        ...existing,
+        ...rest,
+        tokenVersion: nextTokenVersion,
+      };
       store.set(id, updated);
       return updated;
     },
@@ -90,6 +106,7 @@ describe('Users lifecycle use-cases (Fase 1)', () => {
       pinHash: 'hash',
       active: true,
       mustChangePassword: false,
+      tokenVersion: 0,
       createdAt: new Date(),
     };
     const repo = makeInMemoryRepo([existingGabriel]);
@@ -540,5 +557,68 @@ describe('Users lifecycle use-cases (Fase 1)', () => {
     });
     expect(persList).toHaveLength(1);
     expect(persList[0]).toMatchObject({ id: 'u-alun', cpfMasked: null });
+  });
+
+  it('bloqueia Portaria (RECEPTION) de vincular CPF já existente de PERSONAL ou ADMIN sem vazar oráculo', async () => {
+    const repo = makeInMemoryRepo([
+      {
+        id: 'u-pers',
+        name: 'Personal',
+        username: 'personal',
+        cpfHash: crypto.hashCpf(CPF_1),
+        cpfEncrypted: crypto.encryptCpf(CPF_1, 'u-pers'),
+        role: Role.PERSONAL,
+        pinHash: 'h',
+        active: true,
+        mustChangePassword: false,
+        createdAt: new Date(),
+      },
+      {
+        id: 'u-adm',
+        name: 'Admin',
+        username: 'admin',
+        cpfHash: crypto.hashCpf(CPF_2),
+        cpfEncrypted: crypto.encryptCpf(CPF_2, 'u-adm'),
+        role: Role.ADMIN,
+        pinHash: 'h',
+        active: true,
+        mustChangePassword: false,
+        createdAt: new Date(),
+      },
+    ]);
+    const security = { event: jest.fn() } as unknown as SecurityLogger;
+    const createUser = new CreateTraineeUseCase(repo, crypto, security);
+    const receptionCtx = { ...ACTOR_CTX, actorUserId: 'u-rec', actorRole: Role.RECEPTION };
+
+    // RECEPTION tentando criar TRAINEE com CPF de PERSONAL -> bloqueado
+    await expect(
+      createUser.execute(
+        { name: 'Clone', cpf: CPF_1, password: 'Treino@2026', role: Role.TRAINEE },
+        receptionCtx,
+      ),
+    ).rejects.toThrow('Este CPF já está associado a outro cadastro');
+
+    // RECEPTION tentando criar TRAINEE com CPF de ADMIN -> mesma mensagem genérica (sem oráculo!)
+    await expect(
+      createUser.execute(
+        { name: 'Probe', cpf: CPF_2, password: 'Treino@2026', role: Role.TRAINEE },
+        receptionCtx,
+      ),
+    ).rejects.toThrow('Este CPF já está associado a outro cadastro');
+
+    // ADMIN ainda PODE criar TRAINEE com o mesmo CPF de PERSONAL (perfil duplo legítimo)
+    const dual = await createUser.execute(
+      { name: 'Personal Aluno', cpf: CPF_1, password: 'Treino@2026', role: Role.TRAINEE },
+      { ...ACTOR_CTX, actorRole: Role.ADMIN },
+    );
+    expect(dual.role).toBe(Role.TRAINEE);
+
+    // Reset de senha incrementa tokenVersion imediatamente
+    const cache = { invalidate: jest.fn() } as unknown as UserStatusCacheService;
+    const resetPwd = new ResetUserPasswordUseCase(repo, crypto, cache, security);
+    await resetPwd.execute(dual.id, { newPassword: 'TempReset@99' }, ACTOR_CTX);
+    const afterReset = await repo.findById(dual.id);
+    expect(afterReset?.tokenVersion).toBe(1);
+    expect(afterReset?.mustChangePassword).toBe(true);
   });
 });

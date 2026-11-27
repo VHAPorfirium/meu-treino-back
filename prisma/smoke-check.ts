@@ -50,6 +50,7 @@ const EXPECTED_INDEXES = [
   'Exercise_namePt_idx',
   'ProgressPhoto_path_key',
   'WorkoutLog_userId_workoutId_dayKey_key',
+  'WorkoutLog_dayKey_idx',
   'WorkoutAssignment_workoutId_userId_key',
   'FavoriteExercise_userId_exerciseId_key',
 ] as const;

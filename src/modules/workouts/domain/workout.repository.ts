@@ -132,9 +132,14 @@ export interface WorkoutRepository {
     items: { workoutExerciseId: string; order: number }[],
   ): Promise<void>;
 
-  /** Copia treino + exercícios (e opcionalmente destinatários) numa transação. */
+  /** Copia treino + exercícios (e opcionalmente destinatários ativos) numa transação. */
   duplicate(
     id: string,
-    opts: { name: string; copyAssignees: boolean; ownerTrainerId?: string },
+    opts: {
+      name: string;
+      copyAssignees: boolean;
+      ownerTrainerId?: string;
+      allowedAssigneeIds?: string[];
+    },
   ): Promise<Workout>;
 }

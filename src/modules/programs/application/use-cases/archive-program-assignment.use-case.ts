@@ -1,5 +1,6 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { ProgramStatus } from '@prisma/client';
+import { TrainerAccessService } from '../../../links/application/trainer-access.service';
 import {
   PROGRAM_REPOSITORY,
   ProgramRepository,
@@ -12,12 +13,17 @@ export class ArchiveProgramAssignmentUseCase {
   constructor(
     @Inject(PROGRAM_REPOSITORY)
     private readonly programRepository: ProgramRepository,
+    @Optional()
+    private readonly trainerAccess?: TrainerAccessService,
   ) {}
 
   async execute(assignmentId: string, trainerId?: string) {
     const assignment = await this.programRepository.findAssignmentById(assignmentId);
     if (!assignment) throw new NotFoundException('Participação não encontrada');
     assertProgramOwnership(assignment.program, trainerId);
+    if (trainerId && this.trainerAccess) {
+      await this.trainerAccess.assertActiveLink(trainerId, assignment.userId);
+    }
     if (assignment.status !== ProgramStatus.ARCHIVED) {
       await this.programRepository.archiveAssignment(assignmentId);
     }

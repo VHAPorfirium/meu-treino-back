@@ -1,5 +1,6 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { ProgramStatus } from '@prisma/client';
+import { TrainerAccessService } from '../../../links/application/trainer-access.service';
 import {
   PROGRAM_REPOSITORY,
   ProgramRepository,
@@ -12,10 +13,25 @@ export class ListProgramsUseCase {
     @Inject(PROGRAM_REPOSITORY)
     private readonly programRepository: ProgramRepository,
     private readonly programProgressService: ProgramProgressService,
+    @Optional()
+    private readonly trainerAccess?: TrainerAccessService,
   ) {}
 
   async execute(trainerId?: string) {
-    const programs = await this.programRepository.listPrograms(trainerId);
+    const [rawPrograms, allowedTraineeIds] = await Promise.all([
+      this.programRepository.listPrograms(trainerId),
+      trainerId && this.trainerAccess
+        ? this.trainerAccess.getActiveTraineeIds(trainerId)
+        : Promise.resolve(null),
+    ]);
+
+    const allowedSet = allowedTraineeIds ? new Set(allowedTraineeIds) : null;
+    const programs = allowedSet
+      ? rawPrograms.map((p) => ({
+          ...p,
+          assignments: p.assignments.filter((a) => allowedSet.has(a.userId)),
+        }))
+      : rawPrograms;
 
     const activeAssignments = programs.flatMap((program) =>
       program.assignments

@@ -68,13 +68,19 @@ export class PrismaProgramRepository implements ProgramRepository {
         }
         await this.attachWorkouts(transaction, programId, workoutIds);
 
-        // Só participantes ATIVOS recebem/perdem treinos do programa; quem já
-        // concluiu (COMPLETED) não deve receber treinos novos retroativamente.
+        // Só participantes ATIVOS (e ainda vinculados, quando `allowedUserIds` é informado)
+        // recebem/perdem treinos do programa; quem já concluiu (COMPLETED) ou encerrou vínculo
+        // não é afetado retroativamente.
         const activeParticipants = await transaction.programAssignment.findMany({
           where: { programId, status: ProgramStatus.ACTIVE },
           select: { userId: true },
         });
-        const activeUserIds = activeParticipants.map((participant) => participant.userId);
+        const allowedSet = programData.allowedUserIds
+          ? new Set(programData.allowedUserIds)
+          : null;
+        const activeUserIds = activeParticipants
+          .map((participant) => participant.userId)
+          .filter((uid) => !allowedSet || allowedSet.has(uid));
 
         if (removedWorkoutIds.length > 0 && activeUserIds.length > 0) {
           await transaction.workoutAssignment.deleteMany({
@@ -99,6 +105,13 @@ export class PrismaProgramRepository implements ProgramRepository {
     // Workout.programId vira null (SetNull) e as participações somem (Cascade):
     // os treinos continuam existindo e direcionados como estavam.
     await this.prisma.trainingProgram.delete({ where: { id: programId } });
+  }
+
+  async detachProgramOwner(programId: string): Promise<void> {
+    await this.prisma.trainingProgram.update({
+      where: { id: programId },
+      data: { ownerTrainerId: null },
+    });
   }
 
   findProgramById(programId: string): Promise<ProgramWithDetails | null> {

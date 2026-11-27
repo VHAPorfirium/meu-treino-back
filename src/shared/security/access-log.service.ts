@@ -220,4 +220,24 @@ export class AccessLogService {
 
     return { items, total, limit, offset };
   }
+
+  /** Busca direta para exportação CSV sem executar COUNT(*) redundante. */
+  async listDetailedForExport(
+    query: ListAccessLogsQuery = {},
+    maxLimit = 5_000,
+  ): Promise<AccessLogDetailed[]> {
+    const limit = Math.min(maxLimit, Math.max(1, Math.trunc(query.limit ?? maxLimit)));
+    const where = this.buildWhere(query);
+    const userSelect = { id: true, name: true, username: true, role: true } as const;
+
+    return this.prisma.accessLog.findMany({
+      where,
+      include: {
+        user: { select: userSelect },
+        actor: { select: userSelect },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+  }
 }

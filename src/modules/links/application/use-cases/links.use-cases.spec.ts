@@ -229,27 +229,51 @@ describe('LinksModule — ciclo de vida de vínculos e Copy-on-Transfer', () => 
     expect(tx.workoutAssignment.deleteMany).toHaveBeenCalledWith({
       where: { workoutId: 'w-avulso-a', userId: 'u-trainee' },
     });
+    // Também limpa assignments de treinos INATIVOS de outros personais
+    expect(tx.workoutAssignment.deleteMany).toHaveBeenCalledWith({
+      where: {
+        userId: 'u-trainee',
+        workout: {
+          OR: [
+            { ownerTrainerId: null },
+            { ownerTrainerId: { not: 'u-pers-b' } },
+          ],
+        },
+      },
+    });
     expect(security.event).toHaveBeenCalledWith(
       'link.accepted',
       expect.objectContaining({ userId: 'u-trainee', statusCode: 200 }),
     );
   });
 
-  it('RejectLinkUseCase e EndLinkUseCase aplicam ownership e motivos corretos de encerramento', async () => {
+  it('RejectLinkUseCase e EndLinkUseCase aplicam lock FOR UPDATE, ownership e motivos corretos de encerramento', async () => {
     const cache = { invalidarUsuario: jest.fn().mockResolvedValue(undefined) } as unknown as CacheService;
     const security = { event: jest.fn() } as unknown as SecurityLogger;
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      trainerTraineeLink: {
+        findUnique: jest.fn(),
+        update: jest.fn().mockImplementation(async ({ data }) => ({
+          id: 'lnk-1',
+          trainerId: 'p1',
+          traineeId: 't1',
+          ...data,
+        })),
+      },
+    };
     const prisma = {
       trainerTraineeLink: {
         findUnique: jest.fn(),
-        update: jest.fn().mockImplementation(async ({ data }) => ({ id: 'lnk-1', ...data })),
       },
+      $transaction: jest.fn().mockImplementation(async (fn) => fn(tx)),
     } as unknown as PrismaService;
 
     const reject = new RejectLinkUseCase(prisma, security);
     const end = new EndLinkUseCase(prisma, cache, security);
 
     // Outro aluno tentando recusar -> 403
-    (prisma.trainerTraineeLink.findUnique as jest.Mock).mockResolvedValueOnce({
+    tx.trainerTraineeLink.findUnique.mockResolvedValueOnce({
       id: 'lnk-1',
       trainerId: 'p1',
       traineeId: 't1',
@@ -258,9 +282,14 @@ describe('LinksModule — ciclo de vida de vínculos e Copy-on-Transfer', () => 
     await expect(reject.execute('t-outro', 'lnk-1', CTX)).rejects.toThrow(
       ForbiddenException,
     );
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
 
     // Aluno encerrando vínculo ACTIVE -> TRAINEE_ENDED
     (prisma.trainerTraineeLink.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: 'lnk-1',
+      traineeId: 't1',
+    });
+    tx.trainerTraineeLink.findUnique.mockResolvedValueOnce({
       id: 'lnk-1',
       trainerId: 'p1',
       traineeId: 't1',
@@ -272,12 +301,17 @@ describe('LinksModule — ciclo de vida de vínculos e Copy-on-Transfer', () => 
     // Personal cancelando convite PENDING -> TRAINER_CANCELLED
     (prisma.trainerTraineeLink.findUnique as jest.Mock).mockResolvedValueOnce({
       id: 'lnk-2',
+      traineeId: 't1',
+    });
+    tx.trainerTraineeLink.findUnique.mockResolvedValueOnce({
+      id: 'lnk-2',
       trainerId: 'p1',
       traineeId: 't1',
       status: LinkStatus.PENDING,
     });
     const cancelledByTrainer = await end.execute('p1', Role.PERSONAL, 'lnk-2', CTX);
     expect(cancelledByTrainer.endedReason).toBe(LinkEndReason.TRAINER_CANCELLED);
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(3);
   });
 
   it('TrainerAccessService bloqueia personal sem vínculo ativo e encerra todos os vínculos ao desligar personal', async () => {

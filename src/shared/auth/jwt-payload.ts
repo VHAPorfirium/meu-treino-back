@@ -5,6 +5,7 @@ export interface JwtPayload {
   role: Role;
   name: string;
   username?: string;
+  tv?: number; // tokenVersion para revogação imediata de sessões antigas
 }
 
 export interface AuthUser {

@@ -20,7 +20,9 @@ export class MetricsMiddleware implements NestMiddleware {
       const matchedRoute =
         typeof req.route?.path === 'string'
           ? `${req.baseUrl ?? ''}${req.route.path}`
-          : rawPath;
+          : res.statusCode === 404
+            ? '/api/* (404)'
+            : rawPath;
 
       this.metrics.record({
         method: req.method,

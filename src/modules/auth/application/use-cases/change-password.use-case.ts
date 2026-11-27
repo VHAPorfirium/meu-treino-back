@@ -2,8 +2,10 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import {
   USER_REPOSITORY,
@@ -12,6 +14,7 @@ import {
 import { ChangePasswordDto } from '../dto/change-password.dto';
 import { validateStrongPassword } from '../../../../shared/security/cpf-and-password';
 import { SecurityLogger } from '../../../../shared/security/security-logger';
+import { JwtPayload } from '../../../../shared/auth/jwt-payload';
 import { UserStatusCacheService } from '../../../../shared/auth/user-status-cache.service';
 
 export interface ChangePasswordContext {
@@ -27,13 +30,14 @@ export class ChangePasswordUseCase {
     private readonly users: UserRepository,
     private readonly security: SecurityLogger,
     private readonly userStatusCache: UserStatusCacheService,
+    @Optional() private readonly jwt?: JwtService,
   ) {}
 
   async execute(
     userId: string,
     dto: ChangePasswordDto,
     ctx: ChangePasswordContext,
-  ): Promise<{ ok: true; mustChangePassword: false }> {
+  ): Promise<{ ok: true; mustChangePassword: false; token?: string }> {
     const user = await this.users.findById(userId);
     if (!user || !user.active) {
       throw new UnauthorizedException('Conta desativada');
@@ -60,11 +64,25 @@ export class ChangePasswordUseCase {
     const pinHash = await argon2.hash(dto.newPassword, {
       type: argon2.argon2id,
     });
-    await this.users.update(user.id, {
+    const updated = await this.users.update(user.id, {
       pinHash,
       mustChangePassword: false,
+      tokenVersion: { increment: 1 },
     });
     this.userStatusCache.invalidate(user.id);
+
+    const nextVersion = updated?.tokenVersion ?? (user.tokenVersion ?? 0) + 1;
+    let token: string | undefined;
+    if (this.jwt) {
+      const payload: JwtPayload = {
+        sub: user.id,
+        role: user.role,
+        name: user.name,
+        username: user.username,
+        tv: nextVersion,
+      };
+      token = await this.jwt.signAsync(payload);
+    }
 
     this.security.event('auth.password.changed', {
       ip: ctx.ip,
@@ -78,6 +96,6 @@ export class ChangePasswordUseCase {
       statusCode: 200,
     });
 
-    return { ok: true, mustChangePassword: false };
+    return { ok: true, mustChangePassword: false, token };
   }
 }

@@ -221,6 +221,23 @@ function formatHourLabel(epochMs: number): string {
   }
 }
 
+function formatMinuteLabel(epochMs: number): string {
+  try {
+    const fmt = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: getAppTimezone(),
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    return fmt.format(new Date(epochMs));
+  } catch {
+    const d = new Date(epochMs);
+    const h = String(d.getUTCHours()).padStart(2, '0');
+    const m = String(d.getUTCMinutes()).padStart(2, '0');
+    return `${h}:${m}`;
+  }
+}
+
 /**
  * Coletor leve de métricas HTTP em memória com janela deslizante (padrão 24h)
  * e limite rígido de amostras (ring buffer de 5.000 entradas).
@@ -342,22 +359,32 @@ export class MetricsService {
       .sort((a, b) => b.p95Ms - a.p95Ms || b.count - a.count)
       .slice(0, 8);
 
-    // Timeline de 24 buckets horários (da hora mais antiga até a hora atual)
-    const currentHourStart = Math.floor(nowMs / HOUR_MS) * HOUR_MS;
+    // Timeline adaptativa conforme a janela:
+    //  - <= 60 min: 12 buckets de 5 min (HH:mm)
+    //  - <= 360 min: 12 buckets de 30 min (HH:mm)
+    //  - > 360 min: 24 buckets de 1 hora (HHh)
+    const bucketCount = clampedMinutes <= 360 ? 12 : 24;
+    const bucketSizeMs =
+      clampedMinutes <= 60
+        ? 5 * 60_000
+        : clampedMinutes <= 360
+          ? 30 * 60_000
+          : HOUR_MS;
+    const currentBucketStart = Math.floor(nowMs / bucketSizeMs) * bucketSizeMs;
     const bucketStarts: number[] = [];
     const bucketMap = new Map<
       number,
       { total: number; errors4xx: number; errors5xx: number; durations: number[] }
     >();
 
-    for (let i = 23; i >= 0; i--) {
-      const start = currentHourStart - i * HOUR_MS;
+    for (let i = bucketCount - 1; i >= 0; i--) {
+      const start = currentBucketStart - i * bucketSizeMs;
       bucketStarts.push(start);
       bucketMap.set(start, { total: 0, errors4xx: 0, errors5xx: 0, durations: [] });
     }
 
     for (const s of active) {
-      const bStart = Math.floor(s.timestamp / HOUR_MS) * HOUR_MS;
+      const bStart = Math.floor(s.timestamp / bucketSizeMs) * bucketSizeMs;
       const bucket = bucketMap.get(bStart);
       if (!bucket) continue;
       bucket.total += 1;
@@ -370,7 +397,10 @@ export class MetricsService {
       const b = bucketMap.get(start)!;
       b.durations.sort((a, c) => a - c);
       return {
-        hour: formatHourLabel(start),
+        hour:
+          bucketSizeMs < HOUR_MS
+            ? formatMinuteLabel(start)
+            : formatHourLabel(start),
         total: b.total,
         errors4xx: b.errors4xx,
         errors5xx: b.errors5xx,

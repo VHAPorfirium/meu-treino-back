@@ -6,7 +6,11 @@ import {
   HttpMetricsSnapshot,
   MetricsService,
 } from '../../../shared/metrics/metrics.service';
-import { diaLocal, somarDias } from '../../../shared/time/dia-local';
+import {
+  diaLocal,
+  getAppTimezone,
+  somarDias,
+} from '../../../shared/time/dia-local';
 
 export interface AdminOverviewResponse {
   generatedAt: string;
@@ -71,6 +75,8 @@ export interface AdminOverviewResponse {
   };
 }
 
+const OVERVIEW_DB_CACHE_TTL_MS = 15_000;
+
 function resolveGrafanaUrl(): string | null {
   const raw = process.env.ADMIN_GRAFANA_URL?.trim();
   if (!raw) return null;
@@ -88,6 +94,11 @@ function resolveGrafanaUrl(): string | null {
 /**
  * Consolida a visão de observabilidade, saúde, performance e uso global da plataforma
  * para o painel exclusivo `/admin` (`@Roles(Role.ADMIN)`).
+ *
+ * Otimizado para pooler restrito (`connection_limit=1`):
+ *  - Agregações de `WorkoutLog` unificadas em 1 query SQL (`COUNT(*) FILTER`) usando `WorkoutLog_dayKey_idx`.
+ *  - Tendência de logins 7d agregada no PostgreSQL (`GROUP BY` — máximo ~21 linhas, sem risco de OOM).
+ *  - Cache global curto de 15s na leitura do banco (métricas HTTP e cache stats vêm em tempo real).
  */
 @Injectable()
 export class GetAdminOverviewUseCase {
@@ -99,7 +110,35 @@ export class GetAdminOverviewUseCase {
 
   async execute(windowMinutes = 1440): Promise<AdminOverviewResponse> {
     const now = new Date();
-    const todayKey = diaLocal(now);
+    const dbPart =
+      typeof this.cache.lembrarGlobal === 'function'
+        ? await this.cache.lembrarGlobal(
+            'admin:overview:db:v1',
+            OVERVIEW_DB_CACHE_TTL_MS,
+            () => this.loadDatabaseSummary(now),
+          )
+        : await this.loadDatabaseSummary(now);
+
+    const cacheStats = await this.cache.estatisticas();
+
+    return {
+      generatedAt: now.toISOString(),
+      externalGrafanaUrl: resolveGrafanaUrl(),
+      database: dbPart.database,
+      cache: cacheStats,
+      http: this.metrics.getSnapshot(windowMinutes),
+      academy: dbPart.academy,
+      security: dbPart.security,
+    };
+  }
+
+  private async loadDatabaseSummary(now: Date): Promise<{
+    database: AdminOverviewResponse['database'];
+    academy: AdminOverviewResponse['academy'];
+    security: AdminOverviewResponse['security'];
+  }> {
+    const tz = getAppTimezone();
+    const todayKey = diaLocal(now, tz);
     const since7Key = somarDias(todayKey, -6);
     const since30Key = somarDias(todayKey, -29);
     const since24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -107,20 +146,15 @@ export class GetAdminOverviewUseCase {
 
     const [
       dbHealth,
-      cacheStats,
       userGroups,
       linkGroups,
       traineesWithoutTrainer,
-      sessionsToday,
-      sessions7d,
-      sessions30d,
-      completed30d,
+      sessionStatsRows,
       security24hGroups,
-      loginLogs7d,
+      loginDailyRows,
       suspiciousIpsRaw,
     ] = await Promise.all([
       this.checkDatabase(),
-      this.cache.estatisticas(),
       this.prisma.user.groupBy({
         by: ['role', 'active'],
         _count: { _all: true },
@@ -136,26 +170,39 @@ export class GetAdminOverviewUseCase {
           traineeLinks: { none: { status: LinkStatus.ACTIVE } },
         },
       }),
-      this.prisma.workoutLog.count({ where: { dayKey: todayKey } }),
-      this.prisma.workoutLog.count({ where: { dayKey: { gte: since7Key } } }),
-      this.prisma.workoutLog.count({ where: { dayKey: { gte: since30Key } } }),
-      this.prisma.workoutLog.count({
-        where: { dayKey: { gte: since30Key }, completed: true },
-      }),
+      this.prisma.$queryRaw<
+        {
+          today: bigint | number;
+          last7: bigint | number;
+          last30: bigint | number;
+          completed30: bigint | number;
+        }[]
+      >`
+        SELECT
+          COUNT(*) FILTER (WHERE "dayKey" = ${todayKey}) AS "today",
+          COUNT(*) FILTER (WHERE "dayKey" >= ${since7Key}) AS "last7",
+          COUNT(*) FILTER (WHERE "dayKey" >= ${since30Key}) AS "last30",
+          COUNT(*) FILTER (WHERE "dayKey" >= ${since30Key} AND "completed" = true) AS "completed30"
+        FROM "WorkoutLog"
+        WHERE "dayKey" >= ${since30Key}
+      `,
       this.prisma.accessLog.groupBy({
         by: ['event'],
         where: { createdAt: { gte: since24h } },
         _count: { _all: true },
       }),
-      this.prisma.accessLog.findMany({
-        where: {
-          createdAt: { gte: since7d },
-          event: {
-            in: ['auth.login.success', 'auth.login.failure', 'auth.login.locked'],
-          },
-        },
-        select: { event: true, createdAt: true },
-      }),
+      this.prisma.$queryRaw<
+        { day: string; event: string; count: bigint | number }[]
+      >`
+        SELECT
+          TO_CHAR(("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${tz}, 'YYYY-MM-DD') AS "day",
+          "event",
+          COUNT(*) AS "count"
+        FROM "AccessLog"
+        WHERE "createdAt" >= ${since7d}
+          AND "event" IN ('auth.login.success', 'auth.login.failure', 'auth.login.locked')
+        GROUP BY 1, 2
+      `,
       this.prisma.accessLog.groupBy({
         by: ['ip'],
         where: {
@@ -207,6 +254,14 @@ export class GetAdminOverviewUseCase {
       else if (row.status === LinkStatus.PENDING) pendingLinks = row._count._all;
     }
 
+    const sRow = sessionStatsRows[0];
+    const sessions = {
+      today: Number(sRow?.today ?? 0),
+      last7Days: Number(sRow?.last7 ?? 0),
+      last30Days: Number(sRow?.last30 ?? 0),
+      completedLast30Days: Number(sRow?.completed30 ?? 0),
+    };
+
     const secMap = new Map<string, number>();
     let totalSecEvents = 0;
     for (const row of security24hGroups) {
@@ -214,7 +269,6 @@ export class GetAdminOverviewUseCase {
       totalSecEvents += row._count._all;
     }
 
-    // Tendência diária de logins (últimos 7 dias locais)
     const dailyMap = new Map<
       string,
       { day: string; success: number; failure: number; locked: number }
@@ -225,13 +279,13 @@ export class GetAdminOverviewUseCase {
       dayKeys.push(key);
       dailyMap.set(key, { day: key, success: 0, failure: 0, locked: 0 });
     }
-    for (const row of loginLogs7d) {
-      const key = diaLocal(row.createdAt);
-      const bucket = dailyMap.get(key);
+    for (const row of loginDailyRows) {
+      const bucket = dailyMap.get(row.day);
       if (!bucket) continue;
-      if (row.event === 'auth.login.success') bucket.success += 1;
-      else if (row.event === 'auth.login.failure') bucket.failure += 1;
-      else if (row.event === 'auth.login.locked') bucket.locked += 1;
+      const n = Number(row.count ?? 0);
+      if (row.event === 'auth.login.success') bucket.success += n;
+      else if (row.event === 'auth.login.failure') bucket.failure += n;
+      else if (row.event === 'auth.login.locked') bucket.locked += n;
     }
 
     const topSuspiciousIps24h = suspiciousIpsRaw.map((row) => ({
@@ -240,11 +294,7 @@ export class GetAdminOverviewUseCase {
     }));
 
     return {
-      generatedAt: now.toISOString(),
-      externalGrafanaUrl: resolveGrafanaUrl(),
       database: dbHealth,
-      cache: cacheStats,
-      http: this.metrics.getSnapshot(windowMinutes),
       academy: {
         users: {
           total: totalUsers,
@@ -258,12 +308,7 @@ export class GetAdminOverviewUseCase {
           pending: pendingLinks,
           traineesWithoutTrainer,
         },
-        sessions: {
-          today: sessionsToday,
-          last7Days: sessions7d,
-          last30Days: sessions30d,
-          completedLast30Days: completed30d,
-        },
+        sessions,
       },
       security: {
         last24h: {
@@ -301,7 +346,10 @@ export class GetAdminOverviewUseCase {
       const migrationsApplied = migs.filter(
         (m) => Boolean(m.finished_at) && !m.rolled_back_at,
       ).length;
-      const migrationsPendingOrFailed = migs.length - migrationsApplied;
+      // Conta apenas migrations efetivamente pendentes/falhas sem rollback resolvido
+      const migrationsPendingOrFailed = migs.filter(
+        (m) => !m.finished_at && !m.rolled_back_at,
+      ).length;
 
       return {
         status: migrationsPendingOrFailed === 0 ? 'ok' : 'degraded',

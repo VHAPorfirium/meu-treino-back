@@ -76,9 +76,7 @@ describe('AdminController', () => {
     };
 
     const accessLogs = {
-      listDetailed: jest
-        .fn()
-        .mockResolvedValue({ items: [sample], total: 1, limit: 5000, offset: 0 }),
+      listDetailedForExport: jest.fn().mockResolvedValue([sample]),
     } as unknown as AccessLogService;
     const overview = {
       execute: jest.fn(),
@@ -89,8 +87,16 @@ describe('AdminController', () => {
     const send = jest.fn();
     const res = { setHeader, send } as unknown as Response;
 
-    await controller.exportAccessLogs({}, res);
+    await controller.exportAccessLogs({ to: '2026-11-27' }, res);
 
+    expect(accessLogs.listDetailedForExport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: new Date('2026-11-27T23:59:59.999Z'),
+        limit: 5000,
+        offset: 0,
+      }),
+      5000,
+    );
     expect(setHeader).toHaveBeenCalledWith(
       'Content-Type',
       'text/csv; charset=utf-8',
@@ -109,8 +115,26 @@ describe('AdminController', () => {
     expect(csv).toContain('"invalid_credentials, ""bad"""');
   });
 
-  it('escapeCsvCell e formatAccessLogsCsv protegem todos os prefixos de fórmula', () => {
+  it('rejeita parâmetro de data inválido com BadRequestException', async () => {
+    const accessLogs = {
+      listDetailed: jest.fn(),
+    } as unknown as AccessLogService;
+    const overview = {
+      execute: jest.fn(),
+    } as unknown as GetAdminOverviewUseCase;
+
+    const controller = new AdminController(overview, accessLogs);
+    const res = { setHeader: jest.fn() } as unknown as Response;
+
+    await expect(
+      controller.listAccessLogs({ from: 'data-invalida' }, res),
+    ).rejects.toThrow('Parâmetro de data inválido');
+    expect(accessLogs.listDetailed).not.toHaveBeenCalled();
+  });
+
+  it('escapeCsvCell e formatAccessLogsCsv protegem todos os prefixos de fórmula (inclusive com espaços)', () => {
     expect(escapeCsvCell('=1+1')).toBe("'=1+1");
+    expect(escapeCsvCell('  =1+1')).toBe("'  =1+1");
     expect(escapeCsvCell('+SUM(A1)')).toBe("'+SUM(A1)");
     expect(escapeCsvCell('-2+3')).toBe("'-2+3");
     expect(escapeCsvCell('@admin')).toBe("'@admin");

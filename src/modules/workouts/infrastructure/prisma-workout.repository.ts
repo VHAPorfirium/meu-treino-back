@@ -378,7 +378,12 @@ export class PrismaWorkoutRepository implements WorkoutRepository {
 
   async duplicate(
     id: string,
-    opts: { name: string; copyAssignees: boolean; ownerTrainerId?: string },
+    opts: {
+      name: string;
+      copyAssignees: boolean;
+      ownerTrainerId?: string;
+      allowedAssigneeIds?: string[];
+    },
   ): Promise<Workout> {
     return this.prisma.$transaction(async (tx) => {
       const src = await tx.workout.findUniqueOrThrow({
@@ -409,12 +414,20 @@ export class PrismaWorkoutRepository implements WorkoutRepository {
         });
       }
       if (opts.copyAssignees && src.assignments.length) {
-        await tx.workoutAssignment.createMany({
-          data: src.assignments.map((a) => ({
-            workoutId: copy.id,
-            userId: a.userId,
-          })),
-        });
+        const allowed = opts.allowedAssigneeIds
+          ? new Set(opts.allowedAssigneeIds)
+          : null;
+        const filtered = src.assignments.filter(
+          (a) => !allowed || allowed.has(a.userId),
+        );
+        if (filtered.length) {
+          await tx.workoutAssignment.createMany({
+            data: filtered.map((a) => ({
+              workoutId: copy.id,
+              userId: a.userId,
+            })),
+          });
+        }
       }
       return copy;
     });

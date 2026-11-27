@@ -82,7 +82,7 @@ export class CreateTraineeUseCase {
 
     const cpfHash = this.crypto.hashCpf(cpfDigits);
     const existingSameCpf = await this.userRepository.findManyByCpfHash(cpfHash);
-    assertCpfRoleAllowed(existingSameCpf, targetRole);
+    assertCpfRoleAllowed(existingSameCpf, targetRole, undefined, ctx?.actorRole);
 
     let username: string;
     if (dto.username && dto.username.trim()) {

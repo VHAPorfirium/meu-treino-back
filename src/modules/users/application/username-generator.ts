@@ -16,12 +16,14 @@ export interface AuditActorContext {
  * Valida a política de compartilhamento de CPF entre perfis:
  *  - Nunca permite dois cadastros do MESMO papel com o mesmo CPF.
  *  - `ADMIN` é exclusivo: não pode compartilhar CPF com nenhum outro papel (nem vice-versa).
- *  - `PERSONAL` + `TRAINEE` (e `RECEPTION` + `TRAINEE`) com o mesmo CPF são PERMITIDOS!
+ *  - Apenas `ADMIN` pode criar/associar um segundo perfil no mesmo CPF (ex.: `PERSONAL` + `TRAINEE`),
+ *    evitando escalonamento pela Portaria (`RECEPTION`) e eliminando oráculo de CPF de `ADMIN`.
  */
 export function assertCpfRoleAllowed(
   existingWithSameCpf: User[],
   targetRole: Role,
   excludeUserId?: string,
+  actorRole?: Role,
 ): void {
   const others = existingWithSameCpf.filter((u) => u.id !== excludeUserId);
   if (others.length === 0) return;
@@ -29,6 +31,14 @@ export function assertCpfRoleAllowed(
   if (others.some((u) => u.role === targetRole)) {
     throw new ConflictException(
       'Já existe uma conta deste perfil cadastrada com este CPF',
+    );
+  }
+
+  // Portaria (RECEPTION) nunca pode vincular um aluno a um CPF já existente de outro perfil
+  // (mensagem genérica para não revelar se o CPF pertence a um ADMIN, RECEPTION ou PERSONAL).
+  if (actorRole === Role.RECEPTION) {
+    throw new ConflictException(
+      'Este CPF já está associado a outro cadastro. Solicite ao administrador para vincular perfis.',
     );
   }
 

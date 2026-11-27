@@ -1,6 +1,6 @@
 import type { AccessLogDetailed } from '../../../shared/security/access-log.service';
 
-const CSV_FORMULA_PREFIX_RE = /^[=+\-@\t\r]/;
+const CSV_FORMULA_PREFIX_RE = /^\s*[=+\-@\t\r]/;
 
 /**
  * Escapa uma célula conforme RFC-4180 e neutraliza CSV Formula Injection
