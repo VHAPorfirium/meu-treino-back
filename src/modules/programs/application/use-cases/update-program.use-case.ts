@@ -5,7 +5,10 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import { TrainerAccessService } from '../../../links/application/trainer-access.service';
+import {
+  TrainerAccessService,
+  ensureTrainerAccess,
+} from '../../../links/application/trainer-access.service';
 import {
   PROGRAM_REPOSITORY,
   ProgramRepository,
@@ -50,12 +53,13 @@ export class UpdateProgramUseCase {
       }
     }
 
-    const allowedUserIds =
-      uniqueWorkoutIds && trainerId && this.trainerAccess
+    const activeTraineeIds =
+      trainerId && ensureTrainerAccess(this.trainerAccess)
         ? await this.trainerAccess.getActiveTraineeIds(trainerId)
         : undefined;
+    const allowedUserIds = uniqueWorkoutIds ? activeTraineeIds : undefined;
 
-    return this.programRepository.updateProgram(programId, {
+    const updatedProgram = await this.programRepository.updateProgram(programId, {
       name: updateProgramDto.name?.trim(),
       description:
         updateProgramDto.description === undefined
@@ -64,5 +68,12 @@ export class UpdateProgramUseCase {
       workoutIds: uniqueWorkoutIds,
       allowedUserIds,
     });
+    // Ex-alunos (vínculo ENDED) não aparecem na resposta do personal.
+    if (!activeTraineeIds) return updatedProgram;
+    const activeSet = new Set(activeTraineeIds);
+    return {
+      ...updatedProgram,
+      assignments: updatedProgram.assignments.filter((a) => activeSet.has(a.userId)),
+    };
   }
 }

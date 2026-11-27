@@ -207,11 +207,12 @@ describe('LinksModule — ciclo de vida de vínculos e Copy-on-Transfer', () => 
         clonedFromId: 'prog-a',
       }),
     });
-    // Logs antigos vinculados ao ProgramAssignment antes de apontar pro programa clonado (Dia 12/30 intacto!)
+    // Logs antigos (de TODOS os treinos do programa, ativos ou inativos) vinculados ao
+    // ProgramAssignment antes de apontar pro programa clonado (Dia 12/30 intacto!)
     expect(tx.workoutLog.updateMany).toHaveBeenCalledWith({
       where: {
         userId: 'u-trainee',
-        workoutId: 'w-prog-a',
+        workout: { programId: 'prog-a' },
         dayKey: { gte: '2026-11-10' },
         programAssignmentId: null,
       },

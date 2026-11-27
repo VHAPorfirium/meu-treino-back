@@ -34,7 +34,11 @@ export class CompleteSessionUseCase {
       throw new ForbiddenException('Sessão de outro usuário');
     const feito = await this.repo.complete(logId);
     await invalidarProgresso(this.cache, userId);
-    const programCompletion = await this.checkProgramCompletion(userId, log.workoutId);
+    const programCompletion = await this.checkProgramCompletion(
+      userId,
+      log.workoutId,
+      log.programAssignmentId ?? null,
+    );
     return { ...feito, programCompletion };
   }
 
@@ -45,9 +49,10 @@ export class CompleteSessionUseCase {
   private async checkProgramCompletion(
     userId: string,
     workoutId: string,
+    programAssignmentId: string | null,
   ): Promise<ProgramCompletionResult | null> {
     try {
-      return await this.completeProgramIfFinished.execute(userId, workoutId);
+      return await this.completeProgramIfFinished.execute(userId, workoutId, programAssignmentId);
     } catch (err) {
       const e = err as { message?: string; stack?: string };
       this.logger.error(

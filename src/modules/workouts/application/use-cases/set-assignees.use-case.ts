@@ -14,7 +14,10 @@ import {
   USER_REPOSITORY,
   UserRepository,
 } from '../../../users/domain/user.repository';
-import { TrainerAccessService } from '../../../links/application/trainer-access.service';
+import {
+  TrainerAccessService,
+  ensureTrainerAccess,
+} from '../../../links/application/trainer-access.service';
 import { SetAssigneesDto } from '../dto/set-assignees.dto';
 import { PushService } from '../../../push/application/push.service';
 import { assertWorkoutOwnership } from '../workout-ownership';
@@ -41,8 +44,8 @@ export class SetAssigneesUseCase {
 
     const wanted = Array.from(new Set(dto.userIds));
     if (wanted.length) {
-      const all = await this.users.findAll();
-      const byId = new Map(all.map((u) => [u.id, u]));
+      const found = await this.users.findRolesByIds(wanted);
+      const byId = new Map(found.map((u) => [u.id, u]));
       const invalid = wanted.filter(
         (id) => !byId.has(id) || byId.get(id)!.role !== Role.TRAINEE,
       );
@@ -52,13 +55,24 @@ export class SetAssigneesUseCase {
             invalid.join(', '),
         );
       }
-      if (trainerId && this.trainerAccess) {
+      if (trainerId && ensureTrainerAccess(this.trainerAccess)) {
         await this.trainerAccess.assertAllActiveLinks(trainerId, wanted);
       }
     }
 
+    // Escopo do personal: só mexe em quem tem vínculo ACTIVE; ex-alunos (ENDED)
+    // mantêm o treino e não aparecem na resposta.
+    const scope =
+      trainerId && ensureTrainerAccess(this.trainerAccess)
+        ? await this.trainerAccess.getActiveTraineeIds(trainerId)
+        : undefined;
+
     const before = new Set(workout.assignments.map((a) => a.userId));
-    const assignees = await this.workouts.setAssignees(workoutId, wanted);
+    const allAssignees = await this.workouts.setAssignees(workoutId, wanted, scope);
+    const scopeSet = scope ? new Set(scope) : null;
+    const assignees = scopeSet
+      ? allAssignees.filter((a) => scopeSet.has(a.id))
+      : allAssignees;
 
     // notifica só quem foi adicionado agora (best-effort; nunca falha a request)
     const added = wanted.filter((id) => !before.has(id));

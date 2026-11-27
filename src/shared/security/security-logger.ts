@@ -42,7 +42,7 @@ export interface SecurityEventData {
   statusCode?: number;
   requiredRoles?: string[];
   durationMs?: number;
-  scope?: 'ip' | 'global';
+  scope?: 'ip' | 'spray' | 'global';
 }
 
 const INFO_EVENTS: ReadonlySet<SecurityEventName> = new Set([

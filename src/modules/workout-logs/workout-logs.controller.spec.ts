@@ -6,8 +6,12 @@ import { MyHistoryUseCase } from './application/use-cases/my-history.use-case';
 import { WorkoutLogRepository } from './domain/workout-log.repository';
 
 describe('WorkoutLogsController — X-Total-Count em history e my-history', () => {
+  const trainerAccess = {
+    getActiveTraineeIds: jest.fn().mockResolvedValue(['aluna-1', 'aluna-2']),
+  };
+
   function makeController(repo: Partial<WorkoutLogRepository>) {
-    const history = new HistoryUseCase(repo as WorkoutLogRepository);
+    const history = new HistoryUseCase(repo as WorkoutLogRepository, trainerAccess as never);
     const myHistory = new MyHistoryUseCase(repo as WorkoutLogRepository);
     return new WorkoutLogsController(
       {} as never,
@@ -45,8 +49,12 @@ describe('WorkoutLogsController — X-Total-Count em history e my-history', () =
     );
 
     expect(result).toBe(items);
-    expect(repo.history).toHaveBeenCalledWith({ limit: 50, offset: 0 });
-    expect(repo.countHistory).toHaveBeenCalledTimes(1);
+    expect(repo.history).toHaveBeenCalledWith({
+      limit: 50,
+      offset: 0,
+      userIds: ['aluna-1', 'aluna-2'],
+    });
+    expect(repo.countHistory).toHaveBeenCalledWith(['aluna-1', 'aluna-2']);
     expect(setHeader).toHaveBeenCalledWith('X-Total-Count', '147');
   });
 
@@ -76,5 +84,14 @@ describe('WorkoutLogsController — X-Total-Count em history e my-history', () =
     expect(repo.historyByUser).toHaveBeenCalledWith('u-aluna', { limit: 100, offset: 100 });
     expect(repo.countHistoryByUser).toHaveBeenCalledWith('u-aluna');
     expect(setHeader).toHaveBeenCalledWith('X-Total-Count', '112');
+  });
+
+  it('falha fechado (403) se o controle multi-personal não estiver disponível', async () => {
+    const repo = { history: jest.fn(), countHistory: jest.fn() };
+    const history = new HistoryUseCase(repo as unknown as WorkoutLogRepository);
+    await expect(history.execute({ limit: 10 }, 'u-personal')).rejects.toThrow(
+      'Controle de acesso multi-personal indisponível',
+    );
+    expect(repo.history).not.toHaveBeenCalled();
   });
 });

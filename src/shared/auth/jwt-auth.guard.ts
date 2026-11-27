@@ -15,6 +15,9 @@ function unauthorizedReason(err: unknown, info: unknown): string {
   if (err instanceof UnauthorizedException && /desativad/i.test(err.message)) {
     return 'account_inactive';
   }
+  if (err instanceof UnauthorizedException && /revogad/i.test(err.message)) {
+    return 'token_revoked';
+  }
   const name = (info as { name?: string } | undefined)?.name;
   const message = (info as { message?: string } | undefined)?.message ?? '';
   if (name === 'TokenExpiredError') return 'expired';

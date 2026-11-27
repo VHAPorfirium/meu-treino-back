@@ -1,6 +1,9 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { ProgramStatus } from '@prisma/client';
-import { TrainerAccessService } from '../../../links/application/trainer-access.service';
+import {
+  TrainerAccessService,
+  ensureTrainerAccess,
+} from '../../../links/application/trainer-access.service';
 import {
   PROGRAM_REPOSITORY,
   ProgramRepository,
@@ -20,7 +23,7 @@ export class ListProgramsUseCase {
   async execute(trainerId?: string) {
     const [rawPrograms, allowedTraineeIds] = await Promise.all([
       this.programRepository.listPrograms(trainerId),
-      trainerId && this.trainerAccess
+      trainerId && ensureTrainerAccess(this.trainerAccess)
         ? this.trainerAccess.getActiveTraineeIds(trainerId)
         : Promise.resolve(null),
     ]);

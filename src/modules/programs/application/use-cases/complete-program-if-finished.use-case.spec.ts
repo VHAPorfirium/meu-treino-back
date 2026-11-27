@@ -41,7 +41,7 @@ function buildUseCase(currentAssignment: AssignmentWithProgram | null, todayDayK
       { dayKey: '2026-11-01', exerciseLoads: [{ exerciseId: 'agachamento', load: 40 }] },
       { dayKey: '2026-11-30', exerciseLoads: [{ exerciseId: 'agachamento', load: 50 }] },
     ]),
-    markAssignmentCompleted: jest.fn().mockResolvedValue(undefined),
+    markAssignmentCompleted: jest.fn().mockResolvedValue(true),
   } as unknown as jest.Mocked<ProgramRepository>;
 
   const programProgressService = new ProgramProgressService(programRepository);
@@ -110,5 +110,24 @@ describe('CompleteProgramIfFinishedUseCase', () => {
     );
     const completionResult = await useCase.execute('aluna-1', 'outro-treino');
     expect(completionResult.programCompleted).toBe(false);
+  });
+
+  it('conta a sessão aberta já vinculada à participação atual (treino portado na transferência)', async () => {
+    const { useCase } = buildUseCase(
+      buildAssignment({ programType: ProgramType.CHALLENGE, targetDays: 30 }),
+      '2026-11-30',
+    );
+    const completionResult = await useCase.execute('aluna-1', 'treino-antigo', 'assignment-1');
+    expect(completionResult.programCompleted).toBe(true);
+  });
+
+  it('não reporta conclusão quando outra operação já mudou o status (corrida/replay)', async () => {
+    const { useCase, programRepository } = buildUseCase(
+      buildAssignment({ programType: ProgramType.CHALLENGE, targetDays: 30 }),
+      '2026-11-30',
+    );
+    programRepository.markAssignmentCompleted.mockResolvedValueOnce(false);
+    const completionResult = await useCase.execute('aluna-1', 'treino-perna');
+    expect(completionResult).toEqual({ programCompleted: false, report: null });
   });
 });

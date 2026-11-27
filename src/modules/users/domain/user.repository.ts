@@ -25,8 +25,24 @@ export interface UpdateUserInput {
   tokenVersion?: number | { increment: number };
 }
 
+/** Projeção segura (sem `pinHash`, `cpfHash` e `tokenVersion`) para listagens. */
+export type UserListRecord = Pick<
+  User,
+  'id' | 'name' | 'username' | 'role' | 'active' | 'mustChangePassword' | 'cpfEncrypted'
+>;
+
+export interface UserListFilter {
+  ids?: string[];
+  roles?: Role[];
+  active?: boolean;
+}
+
 export interface UserRepository {
   findAll(): Promise<User[]>;
+  /** Filtra no banco e nunca carrega `pinHash` (evita varrer a tabela inteira em RAM). */
+  findManyForList(filter: UserListFilter): Promise<UserListRecord[]>;
+  /** Apenas `id` + `role` dos IDs informados (validação de destinatários). */
+  findRolesByIds(ids: string[]): Promise<Pick<User, 'id' | 'role'>[]>;
   findById(id: string): Promise<User | null>;
   findByCpfHash(cpfHash: string): Promise<User | null>;
   findManyByCpfHash(cpfHash: string): Promise<User[]>;

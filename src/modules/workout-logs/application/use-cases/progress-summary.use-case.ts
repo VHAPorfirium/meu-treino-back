@@ -2,7 +2,10 @@ import { Injectable, Optional } from '@nestjs/common';
 import { ExerciseStatus } from '@prisma/client';
 import { PrismaService } from '../../../../shared/prisma/prisma.service';
 import { CacheService, TTL } from '../../../../shared/cache/cache.service';
-import { TrainerAccessService } from '../../../links/application/trainer-access.service';
+import {
+  TrainerAccessService,
+  ensureTrainerAccess,
+} from '../../../links/application/trainer-access.service';
 import {
   diaLocal,
   inicioDaSemanaLocal,
@@ -38,7 +41,7 @@ export class ProgressSummaryUseCase {
    */
   async execute(userId?: string, trainerId?: string) {
     let scopedUserIds: string[] | undefined;
-    if (trainerId && this.trainerAccess) {
+    if (trainerId && ensureTrainerAccess(this.trainerAccess)) {
       if (userId) {
         await this.trainerAccess.assertActiveLink(trainerId, userId);
       } else {

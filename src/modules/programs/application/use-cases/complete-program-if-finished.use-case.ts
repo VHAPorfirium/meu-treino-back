@@ -28,13 +28,20 @@ export class CompleteProgramIfFinishedUseCase {
     private readonly programProgressService: ProgramProgressService,
   ) {}
 
-  async execute(userId: string, completedWorkoutId: string): Promise<ProgramCompletionResult> {
+  async execute(
+    userId: string,
+    completedWorkoutId: string,
+    sessionProgramAssignmentId?: string | null,
+  ): Promise<ProgramCompletionResult> {
     const currentAssignment = await this.programRepository.findCurrentAssignmentByUser(userId);
     if (!currentAssignment || currentAssignment.status !== ProgramStatus.ACTIVE) return NOT_COMPLETED;
 
-    const workoutBelongsToProgram = currentAssignment.program.workouts.some(
-      (workout) => workout.id === completedWorkoutId,
-    );
+    // A sessão conta para o programa se o treino pertence a ele OU se ela foi aberta
+    // já vinculada a esta participação (ex.: sessão aberta antes de uma transferência
+    // de personal, cujo treino original agora pertence ao programa antigo).
+    const workoutBelongsToProgram =
+      sessionProgramAssignmentId === currentAssignment.id ||
+      currentAssignment.program.workouts.some((workout) => workout.id === completedWorkoutId);
     if (!workoutBelongsToProgram) return NOT_COMPLETED;
 
     const { progress, completedSessions } =
@@ -51,7 +58,14 @@ export class CompleteProgramIfFinishedUseCase {
       completedAt: new Date().toISOString(),
     };
 
-    await this.programRepository.markAssignmentCompleted(currentAssignment.id, programReport);
+    // Transição condicional ACTIVE → COMPLETED (com lock no aluno): se uma atribuição/
+    // arquivamento concorrente ou um replay offline duplicado chegou antes, não
+    // sobrescreve o estado atual nem gera relatório duplicado.
+    const transitioned = await this.programRepository.markAssignmentCompleted(
+      currentAssignment.id,
+      programReport,
+    );
+    if (!transitioned) return NOT_COMPLETED;
     return { programCompleted: true, report: programReport };
   }
 }

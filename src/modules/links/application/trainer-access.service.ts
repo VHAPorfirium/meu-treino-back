@@ -94,3 +94,17 @@ export class TrainerAccessService {
     return count;
   }
 }
+
+/**
+ * Fail-closed: quando há `trainerId` (requisição de PERSONAL), o controle multi-tenant
+ * é obrigatório. Se o serviço não estiver disponível (ex.: erro de wiring de módulo),
+ * nega o acesso em vez de liberar dados de alunos de outros personais.
+ */
+export function ensureTrainerAccess(
+  trainerAccess: TrainerAccessService | undefined,
+): trainerAccess is TrainerAccessService {
+  if (!trainerAccess) {
+    throw new ForbiddenException('Controle de acesso multi-personal indisponível');
+  }
+  return true;
+}

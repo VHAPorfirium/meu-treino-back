@@ -1,6 +1,9 @@
 import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { ProgramStatus } from '@prisma/client';
-import { TrainerAccessService } from '../../../links/application/trainer-access.service';
+import {
+  TrainerAccessService,
+  ensureTrainerAccess,
+} from '../../../links/application/trainer-access.service';
 import {
   PROGRAM_REPOSITORY,
   ProgramRepository,
@@ -25,7 +28,7 @@ export class GetProgramUseCase {
     assertProgramOwnership(program, trainerId);
 
     const allowedSet =
-      trainerId && this.trainerAccess
+      trainerId && ensureTrainerAccess(this.trainerAccess)
         ? new Set(await this.trainerAccess.getActiveTraineeIds(trainerId))
         : null;
     const visibleAssignments = allowedSet

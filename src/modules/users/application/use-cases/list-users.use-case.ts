@@ -1,8 +1,12 @@
 import { ForbiddenException, Inject, Injectable, Optional } from '@nestjs/common';
-import { Role, User } from '@prisma/client';
+import { Role } from '@prisma/client';
 import { CryptoService } from '../../../../shared/security/crypto.service';
 import { TrainerAccessService } from '../../../links/application/trainer-access.service';
-import { USER_REPOSITORY, UserRepository } from '../../domain/user.repository';
+import {
+  USER_REPOSITORY,
+  UserListRecord,
+  UserRepository,
+} from '../../domain/user.repository';
 
 export interface UserSummary {
   id: string;
@@ -15,7 +19,7 @@ export interface UserSummary {
 }
 
 export function toUserSummary(
-  user: User,
+  user: UserListRecord,
   crypto: CryptoService,
   includeCpf = true,
 ): UserSummary {
@@ -75,30 +79,26 @@ export class ListUsersUseCase {
       );
     }
 
-    const all = await this.users.findAll();
-
     if (actorRole === Role.PERSONAL && actor) {
-      const linkedIds = new Set(
-        this.trainerAccess
-          ? await this.trainerAccess.getActiveTraineeIds(actor.userId)
-          : [],
-      );
-      return all
-        .filter((u) => u.role === Role.TRAINEE && linkedIds.has(u.id))
-        .filter((u) => (active !== undefined ? u.active === active : true))
+      const linkedIds = this.trainerAccess
+        ? await this.trainerAccess.getActiveTraineeIds(actor.userId)
+        : [];
+      const linked = await this.users.findManyForList({
+        ids: linkedIds,
+        roles: [Role.TRAINEE],
+        active,
+      });
+      return linked
         .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
         .map((u) => toUserSummary(u, this.crypto, false));
     }
 
-    return all
-      .filter((u) => {
-        if (actorRole === Role.RECEPTION) {
-          return u.role === Role.TRAINEE || u.role === Role.PERSONAL;
-        }
-        return true;
-      })
-      .filter((u) => (role ? u.role === role : true))
-      .filter((u) => (active !== undefined ? u.active === active : true))
+    const visibleRoles =
+      actorRole === Role.RECEPTION ? [Role.TRAINEE, Role.PERSONAL] : undefined;
+    const roles = role ? [role] : visibleRoles;
+
+    const users = await this.users.findManyForList({ roles, active });
+    return users
       .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
       .map((u) => toUserSummary(u, this.crypto, true));
   }
