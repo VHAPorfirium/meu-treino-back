@@ -49,8 +49,10 @@ const COLUNAS_ESPERADAS: [tabela: string, coluna: string][] = [
   ['Workout', 'programId'], // Programas
   ['User', 'username'], // v1.1 login + ciclo de vida
   ['User', 'cpfHash'],
+  ['User', 'cpfEncrypted'],
   ['User', 'active'],
   ['User', 'mustChangePassword'],
+  ['User', 'tokenVersion'], // v2.1.1 revogação de JWT
   ['Workout', 'ownerTrainerId'], // v2.0 multi-personal + portabilidade
   ['Workout', 'clonedFromId'],
   ['TrainingProgram', 'ownerTrainerId'],

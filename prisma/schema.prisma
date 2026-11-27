@@ -68,6 +68,7 @@ model User {
   pinHash            String // hash argon2id da senha (ou PIN legado da v1.0)
   active             Boolean              @default(true)
   mustChangePassword Boolean              @default(false)
+  tokenVersion       Int                  @default(0) // incrementado em reset/troca de senha e desativação para revogar JWTs antigos
   workoutLogs        WorkoutLog[]
   assignments        WorkoutAssignment[] // treinos direcionados a este usuário (E1.1)
   progressPhotos     ProgressPhoto[]
@@ -229,6 +230,7 @@ model WorkoutLog {
 
   @@unique([userId, workoutId, dayKey])
   @@index([userId, date])
+  @@index([dayKey])
   @@index([programAssignmentId])
 }
 
