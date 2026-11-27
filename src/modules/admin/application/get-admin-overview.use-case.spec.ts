@@ -2,16 +2,37 @@ import { LinkStatus, Role } from '@prisma/client';
 import { PrismaService } from '../../../shared/prisma/prisma.service';
 import { CacheService } from '../../../shared/cache/cache.service';
 import { MetricsService } from '../../../shared/metrics/metrics.service';
+import { diaLocal } from '../../../shared/time/dia-local';
 import { GetAdminOverviewUseCase } from './get-admin-overview.use-case';
 
-function makePrismaMock() {
+function makePrismaMock(opts?: {
+  migs?: { finished_at: Date | null; rolled_back_at: Date | null }[];
+}) {
+  const todayKey = diaLocal(new Date());
+  const migs = opts?.migs ?? [
+    { finished_at: new Date(), rolled_back_at: null },
+    { finished_at: new Date(), rolled_back_at: null },
+    // Migration que falhou antes mas já foi marcada como rolled_back (resolvida)
+    { finished_at: null, rolled_back_at: new Date() },
+  ];
+
   return {
     $queryRaw: jest
       .fn()
+      // Ordem de chamada dentro de Promise.all:
+      // 1. checkDatabase -> tables
+      // 2. checkDatabase -> _prisma_migrations
+      // 3. sessionStatsRows (COUNT FILTER)
+      // 4. loginDailyRows (GROUP BY day, event)
       .mockResolvedValueOnce([{ table_name: 'User' }, { table_name: 'AccessLog' }])
+      .mockResolvedValueOnce(migs)
       .mockResolvedValueOnce([
-        { finished_at: new Date(), rolled_back_at: null },
-        { finished_at: new Date(), rolled_back_at: null },
+        { today: 5n, last7: 28n, last30: 110n, completed30: 96n },
+      ])
+      .mockResolvedValueOnce([
+        { day: todayKey, event: 'auth.login.success', count: 10n },
+        { day: todayKey, event: 'auth.login.failure', count: 2n },
+        { day: todayKey, event: 'auth.login.locked', count: 1n },
       ]),
     user: {
       groupBy: jest.fn().mockResolvedValue([
@@ -31,14 +52,6 @@ function makePrismaMock() {
         { status: LinkStatus.ENDED, _count: { _all: 4 } },
       ]),
     },
-    workoutLog: {
-      count: jest
-        .fn()
-        .mockResolvedValueOnce(5)
-        .mockResolvedValueOnce(28)
-        .mockResolvedValueOnce(110)
-        .mockResolvedValueOnce(96),
-    },
     accessLog: {
       groupBy: jest
         .fn()
@@ -50,11 +63,29 @@ function makePrismaMock() {
           { event: 'auth.profile.switched', _count: { _all: 3 } },
         ])
         .mockResolvedValueOnce([{ ip: '198.51.100.42', _count: { _all: 5 } }]),
-      findMany: jest.fn().mockResolvedValue([
-        { event: 'auth.login.success', createdAt: new Date() },
-        { event: 'auth.login.failure', createdAt: new Date() },
-      ]),
     },
+  };
+}
+
+function makeCacheMock() {
+  const store = new Map<string, unknown>();
+  return {
+    estatisticas: jest.fn().mockResolvedValue({
+      enabled: true,
+      entradas: 12,
+      hits: 80,
+      misses: 20,
+      taxaAcerto: 80,
+      emVoo: 0,
+    }),
+    lembrarGlobal: jest.fn(
+      async <T>(chave: string, _ttlMs: number, produtor: () => Promise<T>) => {
+        if (store.has(chave)) return store.get(chave) as T;
+        const val = await produtor();
+        store.set(chave, val);
+        return val;
+      },
+    ),
   };
 }
 
@@ -66,20 +97,11 @@ describe('GetAdminOverviewUseCase', () => {
     else process.env.ADMIN_GRAFANA_URL = prevGrafana;
   });
 
-  it('consolida saúde, cache, métricas HTTP, contadores da academia e segurança', async () => {
+  it('consolida saúde, cache, métricas HTTP, contadores da academia e segurança via SQL agregado', async () => {
     process.env.ADMIN_GRAFANA_URL = 'https://grafana.ritmo.app/d/overview';
 
     const prisma = makePrismaMock();
-    const cache = {
-      estatisticas: jest.fn().mockResolvedValue({
-        enabled: true,
-        entradas: 12,
-        hits: 80,
-        misses: 20,
-        taxaAcerto: 80,
-        emVoo: 0,
-      }),
-    } as unknown as CacheService;
+    const cache = makeCacheMock();
     const metrics = new MetricsService();
     metrics.record({
       method: 'GET',
@@ -90,13 +112,14 @@ describe('GetAdminOverviewUseCase', () => {
 
     const useCase = new GetAdminOverviewUseCase(
       prisma as unknown as PrismaService,
-      cache,
+      cache as unknown as CacheService,
       metrics,
     );
 
     const overview = await useCase.execute(1440);
 
     expect(overview.externalGrafanaUrl).toBe('https://grafana.ritmo.app/d/overview');
+    // Migration com rolled_back_at preenchido não marca banco como degraded
     expect(overview.database).toMatchObject({
       status: 'ok',
       tableCount: 2,
@@ -134,27 +157,44 @@ describe('GetAdminOverviewUseCase', () => {
       profileSwitched: 3,
     });
     expect(overview.security.loginDaily7d).toHaveLength(7);
+    const todayBucket = overview.security.loginDaily7d[6];
+    expect(todayBucket).toMatchObject({ success: 10, failure: 2, locked: 1 });
     expect(overview.security.topSuspiciousIps24h).toEqual([
       { ip: '198.51.100.42', count: 5 },
     ]);
+
+    // Segunda chamada dentro da janela de 15s reaproveita cache global sem reconsultar o banco
+    await useCase.execute(60);
+    expect(cache.lembrarGlobal).toHaveBeenCalledTimes(2);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(4);
+  });
+
+  it('marca banco como degraded quando há migration realmente pendente/falha sem rollback', async () => {
+    const prisma = makePrismaMock({
+      migs: [
+        { finished_at: new Date(), rolled_back_at: null },
+        { finished_at: null, rolled_back_at: null },
+      ],
+    });
+    const cache = makeCacheMock();
+    const useCase = new GetAdminOverviewUseCase(
+      prisma as unknown as PrismaService,
+      cache as unknown as CacheService,
+      new MetricsService(),
+    );
+
+    const overview = await useCase.execute();
+    expect(overview.database.status).toBe('degraded');
+    expect(overview.database.migrationsPendingOrFailed).toBe(1);
   });
 
   it('rejeita ADMIN_GRAFANA_URL com protocolo perigoso (ex.: javascript:)', async () => {
     process.env.ADMIN_GRAFANA_URL = 'javascript:alert(1)';
     const prisma = makePrismaMock();
-    const cache = {
-      estatisticas: jest.fn().mockResolvedValue({
-        enabled: true,
-        entradas: 0,
-        hits: 0,
-        misses: 0,
-        taxaAcerto: 0,
-        emVoo: 0,
-      }),
-    } as unknown as CacheService;
+    const cache = makeCacheMock();
     const useCase = new GetAdminOverviewUseCase(
       prisma as unknown as PrismaService,
-      cache,
+      cache as unknown as CacheService,
       new MetricsService(),
     );
 

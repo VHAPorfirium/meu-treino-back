@@ -120,4 +120,29 @@ describe('MetricsService', () => {
     expect(snap.topRoutes).toEqual([]);
     expect(snap.timeline).toHaveLength(24);
   });
+
+  it('adapta granularidade da timeline conforme windowMinutes (1h, 6h, 24h)', () => {
+    const service = new MetricsService();
+    const now = Date.parse('2026-11-27T15:32:00.000Z');
+    service.record({
+      method: 'GET',
+      route: '/api/health',
+      statusCode: 200,
+      durationMs: 12,
+      timestamp: now - 30_000,
+    });
+
+    const snap1h = service.getSnapshot(60, now);
+    expect(snap1h.timeline).toHaveLength(12);
+    expect(snap1h.timeline[0].hour).toMatch(/^\d{2}:\d{2}$/);
+    expect(snap1h.timeline[snap1h.timeline.length - 1].total).toBe(1);
+
+    const snap6h = service.getSnapshot(360, now);
+    expect(snap6h.timeline).toHaveLength(12);
+    expect(snap6h.timeline[0].hour).toMatch(/^\d{2}:\d{2}$/);
+
+    const snap24h = service.getSnapshot(1440, now);
+    expect(snap24h.timeline).toHaveLength(24);
+    expect(snap24h.timeline[0].hour).toMatch(/^\d{2}h$/);
+  });
 });
