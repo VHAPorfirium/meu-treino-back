@@ -297,18 +297,21 @@ export class AcceptLinkUseCase {
           },
         });
 
+        // Garante que TODOS os logs anteriores desse desafio (inclusive de treinos já
+        // inativados pelo personal antigo) carreguem programAssignmentId antes da troca,
+        // preservando o Dia N/M no programa clonado.
+        await tx.workoutLog.updateMany({
+          where: {
+            userId: traineeId,
+            workout: { programId: oldProgram.id },
+            dayKey: { gte: activeProgramAssignment.startDayKey },
+            programAssignmentId: null,
+          },
+          data: { programAssignmentId: activeProgramAssignment.id },
+        });
+
         for (const oldWorkout of oldProgram.workouts) {
           handledOldWorkoutIds.add(oldWorkout.id);
-          // Garante que logs anteriores desse desafio carreguem programAssignmentId antes da troca
-          await tx.workoutLog.updateMany({
-            where: {
-              userId: traineeId,
-              workoutId: oldWorkout.id,
-              dayKey: { gte: activeProgramAssignment.startDayKey },
-              programAssignmentId: null,
-            },
-            data: { programAssignmentId: activeProgramAssignment.id },
-          });
 
           const clonedWorkout = await tx.workout.create({
             data: {

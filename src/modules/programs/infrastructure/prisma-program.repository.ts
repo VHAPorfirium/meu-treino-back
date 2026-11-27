@@ -49,7 +49,9 @@ export class PrismaProgramRepository implements ProgramRepository {
   }
 
   async updateProgram(programId: string, programData: UpdateProgramData): Promise<ProgramWithDetails> {
-    const { workoutIds, ...programFields } = programData;
+    // `allowedUserIds` é só filtro de escopo (vínculos ativos) — NÃO é coluna de
+    // TrainingProgram; deixá-lo em `data` gera PrismaClientValidationError (HTTP 500).
+    const { workoutIds, allowedUserIds, ...programFields } = programData;
     return this.prisma.$transaction(async (transaction) => {
       await transaction.trainingProgram.update({ where: { id: programId }, data: programFields });
 
@@ -75,8 +77,8 @@ export class PrismaProgramRepository implements ProgramRepository {
           where: { programId, status: ProgramStatus.ACTIVE },
           select: { userId: true },
         });
-        const allowedSet = programData.allowedUserIds
-          ? new Set(programData.allowedUserIds)
+        const allowedSet = allowedUserIds
+          ? new Set(allowedUserIds)
           : null;
         const activeUserIds = activeParticipants
           .map((participant) => participant.userId)
@@ -277,6 +279,10 @@ export class PrismaProgramRepository implements ProgramRepository {
         where: { id: assignmentId },
         select: { id: true, userId: true, programId: true, endDate: true },
       });
+      // Serializa com a conclusão automática (markAssignmentCompleted) do mesmo aluno.
+      await transaction.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "User" WHERE "id" = ${existingAssignment.userId} FOR UPDATE`,
+      );
       await transaction.programAssignment.update({
         where: { id: assignmentId },
         data: {
@@ -295,14 +301,29 @@ export class PrismaProgramRepository implements ProgramRepository {
     });
   }
 
-  async markAssignmentCompleted(assignmentId: string, programReport: ProgramReport): Promise<void> {
-    await this.prisma.programAssignment.update({
-      where: { id: assignmentId },
-      data: {
-        status: ProgramStatus.COMPLETED,
-        endDate: new Date(programReport.completedAt),
-        reportData: programReport as unknown as Prisma.InputJsonValue,
-      },
+  async markAssignmentCompleted(assignmentId: string, programReport: ProgramReport): Promise<boolean> {
+    return this.prisma.$transaction(async (transaction) => {
+      const assignment = await transaction.programAssignment.findUnique({
+        where: { id: assignmentId },
+        select: { userId: true },
+      });
+      if (!assignment) return false;
+
+      // Mesmo lock usado por assignProgramToUsers: serializa conclusão × (re)atribuição
+      // × arquivamento para o mesmo aluno.
+      await transaction.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "User" WHERE "id" = ${assignment.userId} FOR UPDATE`,
+      );
+
+      const { count } = await transaction.programAssignment.updateMany({
+        where: { id: assignmentId, status: ProgramStatus.ACTIVE },
+        data: {
+          status: ProgramStatus.COMPLETED,
+          endDate: new Date(programReport.completedAt),
+          reportData: programReport as unknown as Prisma.InputJsonValue,
+        },
+      });
+      return count > 0;
     });
   }
 

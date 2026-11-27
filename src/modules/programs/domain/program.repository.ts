@@ -95,7 +95,11 @@ export interface ProgramRepository {
   /** Arquiva a participação e retira do aluno os treinos daquele programa, numa transação. */
   archiveAssignment(assignmentId: string): Promise<void>;
 
-  markAssignmentCompleted(assignmentId: string, programReport: ProgramReport): Promise<void>;
+  /**
+   * Marca a participação como COMPLETED somente se ela ainda estiver ACTIVE (transição
+   * condicional sob lock do aluno). Retorna `false` se outra operação já mudou o status.
+   */
+  markAssignmentCompleted(assignmentId: string, programReport: ProgramReport): Promise<boolean>;
 
   /** Sessões concluídas pelo aluno no programa (via programAssignmentId ou treinos do programa) desde o "Dia 1". */
   listCompletedSessionsSince(

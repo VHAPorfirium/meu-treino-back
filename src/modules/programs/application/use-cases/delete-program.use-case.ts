@@ -9,7 +9,7 @@ import { assertProgramOwnership } from '../program-ownership';
 
 /**
  * Remove o programa da visão do personal.
- * Se existirem conquistas concluídas (COMPLETED) ou participações ativas de ex-alunos
+ * Se existirem conquistas (COMPLETED ou ARCHIVED com relatório) ou participações ativas de ex-alunos
  * já desvinculados (ENDED), apenas desvincula `ownerTrainerId` (preservando medalhas e
  * desafios dos alunos em vez de destruí-los por cascade).
  */
@@ -27,8 +27,10 @@ export class DeleteProgramUseCase {
     if (!existingProgram) throw new NotFoundException('Programa não encontrado');
     assertProgramOwnership(existingProgram, trainerId);
 
+    // Medalha = COMPLETED ou qualquer participação com relatório gravado (inclusive
+    // desafios concluídos e depois ARCHIVED, que continuam aparecendo em Conquistas).
     const hasCompletedMedals = existingProgram.assignments.some(
-      (a) => a.status === ProgramStatus.COMPLETED,
+      (a) => a.status === ProgramStatus.COMPLETED || a.reportData != null,
     );
 
     let hasDetachedActiveTrainee = false;
