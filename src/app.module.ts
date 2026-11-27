@@ -26,6 +26,7 @@ import { ProgressPhotosModule } from './modules/progress-photos/progress-photos.
 import { PushModule } from './modules/push/push.module';
 import { ProgramsModule } from './modules/programs/programs.module';
 import { LinksModule } from './modules/links/links.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { LinksModule } from './modules/links/links.module';
     AuthModule,
     UsersModule,
     LinksModule,
+    AdminModule,
     ExercisesModule,
     MuscleGroupsModule,
     WorkoutsModule,
